@@ -34,7 +34,10 @@ echo -e "${GREEN}[2/3]${NC} 🧠 停止 AgentServer..."
 AGENT_PIDS=$(pgrep -f "python api.py" 2>/dev/null)
 if [ -n "$AGENT_PIDS" ]; then
     kill $AGENT_PIDS 2>/dev/null
-    echo -e "  ✅ 已停止 (PID: $AGENT_PIDS)"
+    sleep 2
+    # 如还没死，强制杀
+    pkill -9 -f "python api.py" 2>/dev/null || true
+    echo -e "  ✅ 已停止"
 else
     echo -e "  ⏭️  未在运行"
 fi
