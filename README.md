@@ -85,7 +85,7 @@ IAI（Industrial AI Intelligence）是一套面向工业物联网（IIoT）场�
 
 ```
 IAI/
-├── docker-compose.yml          # 🐳 全栈一键部署（10 个容器）
+├── docker-compose.yml          # 🐳 全栈一键部署（11 个容器）
 ├── start_all.sh                # 🚀 应用层启动脚本
 ├── stop_all.sh                 # 🛑 应用层停止脚本
 ├── README.md
@@ -147,7 +147,7 @@ git clone https://github.com/Fengxiangrong-Boop/iai.git
 cd iai
 ```
 
-### 第 2 步：一键启动基础设施（10 个容器）
+### 第 2 步：一键启动基础设施（11 个容器）
 
 ```bash
 docker compose up -d
@@ -210,9 +210,11 @@ tail -f AgentServer/api_server.log
 |------|------|------|------|
 | AgentServer | 8000 | AI 诊断 API + 管理后台 | http://localhost:8000/dashboard |
 | Grafana | 3000 | 可视化大屏 | http://localhost:3000 (admin/admin123) |
+| Kafdrop | 9000 | Kafka 消息浏览 (Web UI) | http://localhost:9000 |
 | Flink Dashboard | 8081 | 流计算管理 | http://localhost:8081 |
 | Nacos | 8848 | 服务注册中心 | http://localhost:8848/nacos |
-| Kafka | 9092 | 消息队列 | - |
+| Kafka (INTERNAL) | 9092 | 消息队列 (Docker 内部) | - |
+| Kafka (EXTERNAL) | 9094 | 消息队列 (外部客户端) | - |
 | InfluxDB | 8086 | 时序数据库 | - |
 | MySQL | 3306 | 关系型数据库 | - |
 | Redis | 6379 | 告警去重缓存 | - |
@@ -299,6 +301,7 @@ curl -s http://localhost:8081/jobs/overview | python3 -m json.tool
 | 缓存 | Redis | 7.x | 告警去重（5 分钟冷却） |
 | 服务注册 | Nacos | 2.3.2 | 微服务发现 |
 | 可视化 | Grafana | 12.4+ | 实时监控大屏 |
+| Kafka 可视化 | Kafdrop | Latest | Kafka 消息浏览器 |
 | 容器化 | Docker Compose | v2 | 一键部署 |
 | 构建 | Maven + Docker | - | Flink JAR 编译 |
 

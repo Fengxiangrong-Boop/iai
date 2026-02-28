@@ -49,6 +49,22 @@ services:
       - iai-network
 
   # ================================
+  # Kafka 可视化 - Kafdrop (Web UI)
+  # 访问: http://192.168.0.105:9000
+  # ================================
+  kafdrop:
+    image: obsidiandynamics/kafdrop:latest
+    container_name: kafdrop
+    ports:
+      - "9000:9000"
+    environment:
+      KAFKA_BROKERCONNECT: kafka:9092
+      JVM_OPTS: "-Xms32M -Xmx64M"
+    depends_on:
+      - kafka
+    networks:
+      - iai-network
+  # ================================
   # 时序数据库 - InfluxDB 1.8
   # ================================
   influxdb:
