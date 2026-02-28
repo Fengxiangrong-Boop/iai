@@ -160,6 +160,27 @@ services:
     networks:
       - iai-network
 
+  # ================================
+  # 本地大模型 - Ollama (开发测试免费)
+  # ================================
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    networks:
+      - iai-network
+    # 如有 NVIDIA GPU，取消下面注释:
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
 volumes:
   kafka_data:
   influxdb_data:
@@ -167,3 +188,4 @@ volumes:
   redis_data:
   nacos_data:
   grafana_data:
+  ollama_data:
