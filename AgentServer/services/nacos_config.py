@@ -6,6 +6,9 @@ from logger import logger
 NACOS_URL = os.getenv("NACOS_URL", "http://192.168.0.105:8848")
 NAMESPACE_ID = ""
 
+# 禁用代理，确保 Nacos 请求直连
+NO_PROXY = {"http": None, "https": None}
+
 class NacosConfigManager:
     _cache = {}
 
@@ -22,7 +25,7 @@ class NacosConfigManager:
                 "dataId": data_id,
                 "group": group
             }
-            resp = requests.get(url, params=params, timeout=3)
+            resp = requests.get(url, params=params, timeout=3, proxies=NO_PROXY)
             if resp.status_code == 200:
                 cls._cache[data_id] = resp.text
                 return resp.text

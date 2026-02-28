@@ -28,7 +28,7 @@ echo ""
 # ========================================
 # 0. 检查 Docker 基础设施
 # ========================================
-echo -e "${GREEN}[0/5]${NC} 🐳 检查 Docker 基础设施..."
+echo -e "${GREEN}[0/6]${NC} 🐳 检查 Docker 基础设施..."
 RUNNING=$(docker ps --format '{{.Names}}' 2>/dev/null | grep -cE "kafka|mysql|influxdb|redis" || echo "0")
 if [ "$RUNNING" -lt 3 ] 2>/dev/null; then
     echo -e "  ${RED}❌ Docker 基础设施未启动！请先执行:${NC}"
@@ -40,7 +40,7 @@ echo -e "  ${GREEN}✅${NC} 基础设施正常 ($RUNNING 个核心服务运行�
 # ========================================
 # 1. 初始化 MySQL（首次自动建表）
 # ========================================
-echo -e "${GREEN}[1/5]${NC} 🗄️  检查 MySQL..."
+echo -e "${GREEN}[1/6]${NC} 🗄️  检查 MySQL..."
 INIT_SQL="$PROJECT_DIR/deploy/init-sql/init.sql"
 if [ -f "$INIT_SQL" ]; then
     TABLE_COUNT=$(docker exec mysql mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='iai'" -s -N 2>/dev/null || echo "0")
@@ -54,9 +54,25 @@ if [ -f "$INIT_SQL" ]; then
 fi
 
 # ========================================
-# 2. 启动 AgentServer
+# 2. 初始化 Nacos 配置（阈值 + Agent Prompt）
 # ========================================
-echo -e "${GREEN}[2/5]${NC} 🧠 启动 AgentServer..."
+echo -e "${GREEN}[2/6]${NC} 🔧 初始化 Nacos 配置..."
+NACOS_INIT="$PROJECT_DIR/deploy/nacos_config_init.py"
+if [ -f "$NACOS_INIT" ]; then
+    NACOS_CHECK=$(curl -s "http://127.0.0.1:8848/nacos/v1/cs/configs?dataId=sensor.thresholds.json&group=DEFAULT_GROUP" 2>/dev/null)
+    if [ -z "$NACOS_CHECK" ] || echo "$NACOS_CHECK" | grep -q "error"; then
+        cd "$PROJECT_DIR"
+        python deploy/nacos_config_init.py 2>/dev/null || true
+        echo -e "  ${GREEN}✅${NC} Nacos 配置初始化完成"
+    else
+        echo -e "  ${GREEN}✅${NC} Nacos 配置已就绪"
+    fi
+fi
+
+# ========================================
+# 3. 启动 AgentServer
+# ========================================
+echo -e "${GREEN}[3/6]${NC} 🧠 启动 AgentServer..."
 cd "$PROJECT_DIR/AgentServer"
 
 kill $(pgrep -f "python api.py" 2>/dev/null) 2>/dev/null || true
@@ -64,6 +80,9 @@ sleep 1
 
 pip install -r requirements.txt -q 2>/dev/null || true
 
+# 设置 no_proxy 避免本地服务间通信走代理
+export no_proxy="127.0.0.1,localhost,192.168.0.105"
+export NO_PROXY="127.0.0.1,localhost,192.168.0.105"
 nohup python api.py > api_server.log 2>&1 &
 AGENT_PID=$!
 sleep 3
@@ -72,7 +91,7 @@ echo -e "  ${GREEN}✅${NC} AgentServer 已启动 (PID: $AGENT_PID)"
 # ========================================
 # 3. 提交 Flink 作业
 # ========================================
-echo -e "${GREEN}[3/5]${NC} ⚡ 提交 Flink 作业..."
+echo -e "${GREEN}[4/6]${NC} ⚡ 提交 Flink 作业..."
 FLINK_URL="http://127.0.0.1:8081"
 FLINK_JAR="$PROJECT_DIR/FlinkEngine/target/FlinkEngine-1.0-SNAPSHOT.jar"
 
@@ -132,7 +151,7 @@ fi
 # ========================================
 # 4. 初始化 Grafana 看板（首次自动配置）
 # ========================================
-echo -e "${GREEN}[4/5]${NC} 📊 检查 Grafana 看板..."
+echo -e "${GREEN}[5/6]${NC} 📊 检查 Grafana 看板..."
 GRAFANA_URL="http://127.0.0.1:3000"
 DASHBOARD_CHECK=$(curl -s -u admin:$GRAFANA_ADMIN_PASSWORD "$GRAFANA_URL/api/search?query=IAI" 2>/dev/null)
 HAS_DASHBOARD=$(echo "$DASHBOARD_CHECK" | python3 -c "
@@ -155,7 +174,7 @@ fi
 # ========================================
 # 5. 启动传感器模拟器
 # ========================================
-echo -e "${GREEN}[5/5]${NC} 📡 启动传感器模拟器..."
+echo -e "${GREEN}[6/6]${NC} 📡 启动传感器模拟器..."
 cd "$PROJECT_DIR/DataIngestor"
 kill $(pgrep -f "sensor_simulator" 2>/dev/null) 2>/dev/null || true
 sleep 1

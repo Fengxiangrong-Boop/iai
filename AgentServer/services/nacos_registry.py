@@ -23,6 +23,9 @@ SERVICE_NAME = os.getenv("SERVICE_NAME", "agent-server")
 SERVICE_IP = os.getenv("SERVICE_IP", "192.168.0.105")
 SERVICE_PORT = int(os.getenv("SERVICE_PORT", "8000"))
 
+# 禁用代理，确保 Nacos 请求直连（避免走系统代理导致超时）
+NO_PROXY = {"http": None, "https": None}
+
 
 def register_to_nacos() -> bool:
     """
@@ -40,7 +43,7 @@ def register_to_nacos() -> bool:
             "weight": "1.0",
             "metadata": '{"version":"1.0.0","framework":"fastapi"}'
         }
-        resp = requests.post(url, params=params, timeout=5)
+        resp = requests.post(url, params=params, timeout=5, proxies=NO_PROXY)
         if resp.status_code == 200 and resp.text == "ok":
             logger.info(f"✅ [Nacos] 服务 '{SERVICE_NAME}' 注册成功 ({SERVICE_IP}:{SERVICE_PORT})")
             return True
@@ -61,7 +64,7 @@ def deregister_from_nacos():
             "ip": SERVICE_IP,
             "port": SERVICE_PORT,
         }
-        resp = requests.delete(url, params=params, timeout=5)
+        resp = requests.delete(url, params=params, timeout=5, proxies=NO_PROXY)
         logger.info(f"🛑 [Nacos] 服务 '{SERVICE_NAME}' 已注销: {resp.text}")
     except Exception as e:
         logger.warning(f"⚠️ [Nacos] 注销失败: {e}")
@@ -79,7 +82,7 @@ def _heartbeat_loop(stop_event: threading.Event):
                 "ip": SERVICE_IP,
                 "port": SERVICE_PORT,
             }
-            resp = requests.put(url, params=params, timeout=5)
+            resp = requests.put(url, params=params, timeout=5, proxies=NO_PROXY)
             if resp.status_code != 200:
                 logger.debug(f"[Nacos] 心跳返回: {resp.status_code}")
         except Exception:
