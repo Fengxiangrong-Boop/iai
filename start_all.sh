@@ -72,6 +72,15 @@ echo -e "${GREEN}[3/5]${NC} ⚡ 提交 Flink 作业..."
 FLINK_URL="http://127.0.0.1:8081"
 FLINK_JAR="$PROJECT_DIR/FlinkEngine/target/FlinkEngine-1.0-SNAPSHOT.jar"
 
+# 预创建 Kafka topic（Flink 需要 topic 已存在才能订阅）
+echo "  📦 预创建 Kafka Topic..."
+docker exec kafka kafka-topics.sh --create --if-not-exists \
+    --topic raw_sensor_data --partitions 1 --replication-factor 1 \
+    --bootstrap-server kafka:9092 2>/dev/null || true
+docker exec kafka kafka-topics.sh --create --if-not-exists \
+    --topic anomaly_alerts --partitions 1 --replication-factor 1 \
+    --bootstrap-server kafka:9092 2>/dev/null || true
+
 # 等待 Flink 就绪（最多 60 秒）
 FLINK_WAIT=0
 while ! curl -s "$FLINK_URL/overview" > /dev/null 2>&1; do
