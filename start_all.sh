@@ -72,6 +72,17 @@ echo -e "${GREEN}[3/5]${NC} ⚡ 提交 Flink 作业..."
 FLINK_URL="http://127.0.0.1:8081"
 FLINK_JAR="$PROJECT_DIR/FlinkEngine/target/FlinkEngine-1.0-SNAPSHOT.jar"
 
+# 等待 Flink 就绪（最多 60 秒）
+FLINK_WAIT=0
+while ! curl -s "$FLINK_URL/overview" > /dev/null 2>&1; do
+    if [ $FLINK_WAIT -ge 60 ]; then
+        break
+    fi
+    echo -ne "  ⏳ 等待 Flink 启动... ${FLINK_WAIT}s\r"
+    sleep 5
+    FLINK_WAIT=$((FLINK_WAIT + 5))
+done
+
 if curl -s "$FLINK_URL/overview" > /dev/null 2>&1; then
     RUNNING_JOBS=$(curl -s "$FLINK_URL/jobs/overview" 2>/dev/null | python3 -c "
 import sys, json
