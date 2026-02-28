@@ -4,8 +4,9 @@
 # 自动配置数据源 + 创建工业智能可视化大屏
 # ============================================
 
-GRAFANA_URL="http://127.0.0.1:3000"
-GRAFANA_AUTH="admin:admin"
+GRAFANA_URL="${GRAFANA_URL:-http://127.0.0.1:3000}"
+GRAFANA_AUTH="${GRAFANA_AUTH:-admin:admin123}"
+MYSQL_PASSWORD="${MYSQL_ROOT_PASSWORD:-mysql@123}"
 
 echo "🔧 [1/3] 配置 InfluxDB 数据源..."
 curl -s -X POST "$GRAFANA_URL/api/datasources" \
@@ -36,7 +37,7 @@ curl -s -X POST "$GRAFANA_URL/api/datasources" \
     "database": "iai",
     "user": "root",
     "secureJsonData": {
-      "password": "mysql@123"
+      "password": "'$MYSQL_PASSWORD'"
     },
     "jsonData": {}
   }' | python3 -m json.tool 2>/dev/null || echo "  (可能已存在)"

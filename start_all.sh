@@ -15,6 +15,10 @@ YELLOW='\033[1;33m'
 RED='\033[0;31m'
 NC='\033[0m'
 
+# 敏感配置（可通过环境变量覆盖）
+MYSQL_ROOT_PASSWORD="${MYSQL_ROOT_PASSWORD:-mysql@123}"
+GRAFANA_ADMIN_PASSWORD="${GRAFANA_ADMIN_PASSWORD:-admin123}"
+
 echo ""
 echo "╔══════════════════════════════════════════════╗"
 echo "║   🏭 IAI 应用层服务启动                     ║"
@@ -39,10 +43,10 @@ echo -e "  ${GREEN}✅${NC} 基础设施正常 ($RUNNING 个核心服务运行�
 echo -e "${GREEN}[1/5]${NC} 🗄️  检查 MySQL..."
 INIT_SQL="$PROJECT_DIR/deploy/init-sql/init.sql"
 if [ -f "$INIT_SQL" ]; then
-    TABLE_COUNT=$(docker exec mysql mysql -uroot -p'mysql@123' -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='iai'" -s -N 2>/dev/null || echo "0")
+    TABLE_COUNT=$(docker exec mysql mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='iai'" -s -N 2>/dev/null || echo "0")
     if [ "$TABLE_COUNT" -lt 3 ] 2>/dev/null; then
         echo "  📥 首次初始化数据库..."
-        docker exec -i mysql mysql -uroot -p'mysql@123' iai < "$INIT_SQL" 2>/dev/null || true
+        docker exec -i mysql mysql -uroot -p"$MYSQL_ROOT_PASSWORD" iai < "$INIT_SQL" 2>/dev/null || true
         echo -e "  ${GREEN}✅${NC} MySQL 初始化完成"
     else
         echo -e "  ${GREEN}✅${NC} MySQL 已就绪 (${TABLE_COUNT} 张表)"
@@ -130,7 +134,7 @@ fi
 # ========================================
 echo -e "${GREEN}[4/5]${NC} 📊 检查 Grafana 看板..."
 GRAFANA_URL="http://127.0.0.1:3000"
-DASHBOARD_CHECK=$(curl -s -u admin:admin123 "$GRAFANA_URL/api/search?query=IAI" 2>/dev/null)
+DASHBOARD_CHECK=$(curl -s -u admin:$GRAFANA_ADMIN_PASSWORD "$GRAFANA_URL/api/search?query=IAI" 2>/dev/null)
 HAS_DASHBOARD=$(echo "$DASHBOARD_CHECK" | python3 -c "
 import sys, json
 try:

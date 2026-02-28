@@ -1,3 +1,4 @@
+# Python
 **/__pycache__/
 *.pyc
 *.pyo
@@ -5,14 +6,28 @@
 .Python
 env/
 venv/
+
+# 环境变量（含敏感信息，禁止提交）
 .env
+.env.cloud
+.env.ollama
+.env.local
+
+# 日志
 *.log
+
+# Java / Maven
 **/target/
+*.class
+*.iml
+
+# IDE
 .idea/
 .vscode/
 .project
 .classpath
 .settings/
-*.iml
-*.class
-.env.cloud
+
+# 模拟器日志
+DataIngestor/simulator.log
+AgentServer/api_server.log
