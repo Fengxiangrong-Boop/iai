@@ -397,6 +397,20 @@ def update_device_status(device_id: str, status: str) -> str:
     """更新设备运行状态（如：标记为 MAINTENANCE）→ MySQL device_registry"""
 ```
 
+### 3.4.3 Nacos 动态配置与技能路由（配置热插拔）
+
+为了实现系统的高可用与灵活调度，系统引入 Nacos 作为配置中心，剥离了硬编码代码（控制流）与业务参数（策略流）。以下配置无需重启系统即可**热更新、毫秒级实时生效**：
+
+1. **Agent 提示词与人设热更新 (`agent.prompts.*`)**
+   - 将原来写死在大模型代码中的系统提示词（Role Description & Prompt）托管到 Nacos。算法工程师可直接在 Web 控制台调优大模型的诊断与决策 Prompt，立即干预和纠正 AI 幻觉，改进报告格式。
+   
+2. **MCP 工具动态路由与热插拔 (`agent.skills.config`)**
+   - **技能开关（Feature Flags）**：当底层关联系统（如 MySQL/InfluxDB）负载过高或宕机时，可在 Nacos 中一键关闭相关 MCP 工具的授权（如 `fetch_telemetry_data: false`）。Agent 过滤后不会再看见该工具，自动进行降级处理。
+   - **技能描述微调**：可以在 Nacos 中动态修改工具的 `description`，引导 LLM 传入更准确的参数格式，完全免部署修 Bug。
+
+3. **传感器异常阈值控制 (`sensor.thresholds.json`)**
+   - 包含温度、振动的越限阈值，以及模拟器随机触发异常的概率。用于在运行时实时调节监控系统的敏感度和压测频率。
+
 ### 3.5 展示层
 
 #### 3.5.1 Grafana 监控大屏
@@ -583,4 +597,5 @@ IAI/
 | LLM API 不可用 | AI 诊断失败 | 降级为规则引擎预设方案 + 重试机制 |
 | Kafka 数据积压 | 处理延迟 | 监控 Consumer Lag + 告警 |
 | InfluxDB 磁盘满 | 数据丢失 | 自动保留策略 + 磁盘监控 |
+| 外部支撑系统宕机 | Agent查询卡死/雪崩 | Nacos 动态关闭该 MCP Tools 技能 (降级) |
 | 告警风暴 | AgentServer 过载 | Redis 去重 + 限流 + 批量合并 |
