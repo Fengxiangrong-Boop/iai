@@ -16,6 +16,7 @@ from logger import logger, get_logger_with_trace
 from agents.diagnostic_agent import DiagnosticAgent
 from agents.decision_agent import DecisionAgent
 from services.alert_service import AlertService
+from services.nacos_registry import register_to_nacos, deregister_from_nacos, start_heartbeat, stop_heartbeat
 
 # === 初始化环境与客户端 ===
 # 加载 .env 文件
@@ -83,12 +84,18 @@ async def lifespan(app: FastAPI):
             state.tools_cache = mcp_tools_to_openai_tools(tools_response.tools)
             logger.info(f"✅ 成功加载工具: {[t.name for t in tools_response.tools]}")
             
+            # [Phase E] Nacos 服务注册
+            register_to_nacos()
+            start_heartbeat()
+            
             yield
             
         except Exception as e:
             logger.error(f"❌ 启动 MCP Client 失败: {e}", exc_info=True)
             raise e
         finally:
+            stop_heartbeat()
+            deregister_from_nacos()
             logger.info("🛑 正在关闭服务和释放资源...")
 
 app = FastAPI(
