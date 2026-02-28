@@ -71,11 +71,37 @@ class BaseAgent:
             self.memory.append(response_message)
             
             # 2. 判断大模型是否需要调用工具
-            if response_message.tool_calls:
+            tool_calls = response_message.tool_calls
+
+            # 兼容：部分本地大模型偶尔会把工具 JSON 漏在 content 里面，导致未落入 tool_calls
+            if not tool_calls and response_message.content:
+                content_str = response_message.content.strip()
+                if '{"name":' in content_str and '"arguments":' in content_str:
+                    try:
+                        start_idx = content_str.find("{")
+                        end_idx = content_str.rfind("}") + 1
+                        parsed = json.loads(content_str[start_idx:end_idx])
+                        if "name" in parsed and "arguments" in parsed:
+                            class DummyFunction:
+                                def __init__(self, name, args):
+                                    self.name = name
+                                    self.arguments = json.dumps(args) if isinstance(args, dict) else args
+                            class DummyToolCall:
+                                def __init__(self, tid, func):
+                                    self.id = tid
+                                    self.function = func
+                            
+                            # 包装成与 OpenAI 返回一致的结构
+                            tool_calls = [DummyToolCall(f"call_{turn}", DummyFunction(parsed["name"], parsed["arguments"]))]
+                            print(f"[{self.name}] 🩹 触发兼容层：从普通文本提取到隐藏的工具调用 -> {parsed['name']}")
+                    except Exception:
+                        pass
+
+            if tool_calls:
                 print(f"[{self.name}] 🧠 决定执行 Action...")
                 has_blocked_tool = False
 
-                for tool_call in response_message.tool_calls:
+                for tool_call in tool_calls:
                     tool_name = tool_call.function.name
 
                     # 检查该工具是否已经连续失败过多次
