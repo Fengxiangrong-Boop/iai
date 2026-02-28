@@ -105,6 +105,10 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+# === 注册 Web 管理后台路由 ===
+from routes.dashboard import router as dashboard_router
+app.include_router(dashboard_router)
+
 # === 数据模型定义 ===
 class AlertPayload(BaseModel):
     device_id: str = Field(..., description="设备唯一标识符")
