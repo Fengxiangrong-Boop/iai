@@ -13,7 +13,6 @@ import org.apache.flink.connector.kafka.source.enumerator.initializer.OffsetsIni
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.windowing.assigners.TumblingProcessingTimeWindows;
-import org.apache.flink.streaming.api.windowing.time.Time;
 import org.apache.flink.api.java.tuple.Tuple2;
 
 import java.time.Duration;
@@ -50,7 +49,7 @@ public class MetricsAggregationJob {
         // 基于 Key 分组，开设 1 分钟滚动窗口，执行聚合计算
         DataStream<ObjectNode> aggStream = parsedStream
                 .keyBy(t -> t.f0)
-                .window(TumblingProcessingTimeWindows.of(Time.minutes(1)))
+                .window(TumblingProcessingTimeWindows.of(Duration.ofMinutes(1)))
                 .aggregate(new SensorAggregator());
 
         // 写回 InfluxDB aggregated_metrics
