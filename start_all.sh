@@ -1,10 +1,11 @@
 #!/bin/bash
 # ============================================
-# IAI 工业智能体系统 - 全栈启动脚本
+# IAI 应用层启动脚本
 # ============================================
-# 用法:
-#   bash start_all.sh           # 启动全部（不含传感器模拟）
-#   bash start_all.sh --with-simulator  # 启动全部 + 传感器模拟（会触发大模型调用！）
+# 职责划分:
+#   基础设施:  docker compose up -d / down
+#   应用服务:  bash start_all.sh / stop_all.sh （本脚本）
+#   传感器:    cd DataIngestor && python sensor_simulator.py（手动控制）
 # ============================================
 
 set -e
@@ -16,150 +17,107 @@ NC='\033[0m'
 
 echo ""
 echo "╔══════════════════════════════════════════════╗"
-echo "║   🏭 IAI 工业智能体系统 - 全栈启动          ║"
+echo "║   🏭 IAI 应用层服务启动                     ║"
 echo "╚══════════════════════════════════════════════╝"
 echo ""
 
 # ========================================
-# 1. 启动 Docker 基础设施
+# 0. 检查 Docker 基础设施
 # ========================================
-echo -e "${GREEN}[1/5]${NC} 🐳 检查 Docker 基础设施..."
-# 检测关键容器是否已在运行
-RUNNING_CONTAINERS=$(docker ps --format '{{.Names}}' 2>/dev/null | grep -cE "kafka|mysql|influxdb|redis" || echo "0")
-if [ "$RUNNING_CONTAINERS" -ge 3 ] 2>/dev/null; then
-    echo -e "  ${GREEN}✅${NC} Docker 基础设施已在运行 ($RUNNING_CONTAINERS 个核心服务)"
-elif [ -f "$PROJECT_DIR/docker-compose.yml" ]; then
-    cd "$PROJECT_DIR"
-    docker-compose up -d 2>/dev/null || docker compose up -d 2>/dev/null
-    echo -e "  ${GREEN}✅${NC} Docker 基础设施已启动"
-    echo "  ⏳ 等待服务就绪 (15秒)..."
-    sleep 15
-else
-    echo -e "  ${YELLOW}⚠️${NC}  请手动启动 Docker 基础设施"
+echo -e "${GREEN}[0/3]${NC} 🐳 检查 Docker 基础设施..."
+RUNNING=$(docker ps --format '{{.Names}}' 2>/dev/null | grep -cE "kafka|mysql|influxdb|redis" || echo "0")
+if [ "$RUNNING" -lt 3 ] 2>/dev/null; then
+    echo -e "  ${RED}❌ Docker 基础设施未启动！请先执行:${NC}"
+    echo -e "     ${YELLOW}cd $PROJECT_DIR && docker compose up -d${NC}"
+    exit 1
 fi
+echo -e "  ${GREEN}✅${NC} 基础设施正常 ($RUNNING 个核心服务运行中)"
 
 # ========================================
-# 2. 初始化 MySQL（如果需要）
+# 1. 初始化 MySQL（首次自动建表）
 # ========================================
-echo -e "${GREEN}[2/5]${NC} 🗄️  检查 MySQL 初始化..."
+echo -e "${GREEN}[1/3]${NC} 🗄️  检查 MySQL..."
 INIT_SQL="$PROJECT_DIR/deploy/init-sql/init.sql"
 if [ -f "$INIT_SQL" ]; then
-    # 尝试检查 iai 数据库是否已初始化
     TABLE_COUNT=$(docker exec mysql mysql -uroot -p'mysql@123' -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='iai'" -s -N 2>/dev/null || echo "0")
     if [ "$TABLE_COUNT" -lt 3 ] 2>/dev/null; then
-        echo "  📥 正在初始化 MySQL 数据库..."
+        echo "  📥 首次初始化数据库..."
         docker exec -i mysql mysql -uroot -p'mysql@123' iai < "$INIT_SQL" 2>/dev/null || true
         echo -e "  ${GREEN}✅${NC} MySQL 初始化完成"
     else
-        echo -e "  ${GREEN}✅${NC} MySQL 已初始化 (${TABLE_COUNT} 张表)"
+        echo -e "  ${GREEN}✅${NC} MySQL 已就绪 (${TABLE_COUNT} 张表)"
     fi
-else
-    echo -e "  ${YELLOW}⚠️${NC}  未找到 init.sql，跳过"
 fi
 
 # ========================================
-# 3. 启动 AgentServer
+# 2. 启动 AgentServer
 # ========================================
-echo -e "${GREEN}[3/5]${NC} 🧠 启动 AgentServer (AI 诊断引擎)..."
+echo -e "${GREEN}[2/3]${NC} 🧠 启动 AgentServer..."
 cd "$PROJECT_DIR/AgentServer"
 
-# 停掉旧进程（如果存在）
 kill $(pgrep -f "python api.py" 2>/dev/null) 2>/dev/null || true
 sleep 1
 
-# 安装依赖（静默）
 pip install -r requirements.txt -q 2>/dev/null || true
 
-# 启动
 nohup python api.py > api_server.log 2>&1 &
 AGENT_PID=$!
+sleep 3
 echo -e "  ${GREEN}✅${NC} AgentServer 已启动 (PID: $AGENT_PID)"
-echo "  📋 日志: $PROJECT_DIR/AgentServer/api_server.log"
-echo "  🌐 管理后台: http://192.168.0.105:8000/dashboard"
-echo "  📖 API 文档: http://192.168.0.105:8000/docs"
-
-# 等待 AgentServer 就绪
-sleep 5
 
 # ========================================
-# 4. 提交 Flink 作业
+# 3. 提交 Flink 作业
 # ========================================
-echo -e "${GREEN}[4/5]${NC} ⚡ 检查 Flink 作业状态..."
+echo -e "${GREEN}[3/3]${NC} ⚡ 提交 Flink 作业..."
 FLINK_URL="http://127.0.0.1:8081"
 FLINK_JAR="$PROJECT_DIR/FlinkEngine/target/FlinkEngine-1.0-SNAPSHOT.jar"
 
-# 检查 Flink 是否可达
 if curl -s "$FLINK_URL/overview" > /dev/null 2>&1; then
-    # 检查是否有正在运行的作业
     RUNNING_JOBS=$(curl -s "$FLINK_URL/jobs/overview" 2>/dev/null | python3 -c "
 import sys, json
 try:
     data = json.load(sys.stdin)
-    running = [j for j in data.get('jobs', []) if j['state'] == 'RUNNING']
-    print(len(running))
+    print(len([j for j in data.get('jobs', []) if j['state'] == 'RUNNING']))
 except: print('0')
 " 2>/dev/null)
 
     if [ "$RUNNING_JOBS" -ge 2 ] 2>/dev/null; then
-        echo -e "  ${GREEN}✅${NC} Flink 作业已在运行中 ($RUNNING_JOBS 个)"
+        echo -e "  ${GREEN}✅${NC} Flink 作业已在运行 ($RUNNING_JOBS 个)"
     elif [ -f "$FLINK_JAR" ]; then
-        echo "  📦 上传 Flink JAR..."
+        echo "  📦 上传并启动 Flink 作业..."
         JAR_RESP=$(curl -s -X POST "$FLINK_URL/jars/upload" -H "Expect:" -F "jarfile=@$FLINK_JAR" 2>/dev/null)
         JAR_ID=$(echo "$JAR_RESP" | python3 -c "import sys,json; print(json.load(sys.stdin).get('filename','').split('/')[-1])" 2>/dev/null)
 
         if [ -n "$JAR_ID" ] && [ "$JAR_ID" != "None" ]; then
-            echo "  🚀 启动 AnomalyDetectionJob..."
-            curl -s -X POST "$FLINK_URL/jars/$JAR_ID/run" \
-                 -H "Content-Type: application/json" \
+            curl -s -X POST "$FLINK_URL/jars/$JAR_ID/run" -H "Content-Type: application/json" \
                  -d '{"entryClass": "com.iai.flink.AnomalyDetectionJob"}' > /dev/null 2>&1
-
-            echo "  🚀 启动 MetricsAggregationJob..."
-            curl -s -X POST "$FLINK_URL/jars/$JAR_ID/run" \
-                 -H "Content-Type: application/json" \
+            curl -s -X POST "$FLINK_URL/jars/$JAR_ID/run" -H "Content-Type: application/json" \
                  -d '{"entryClass": "com.iai.flink.MetricsAggregationJob"}' > /dev/null 2>&1
-
             sleep 3
-            echo -e "  ${GREEN}✅${NC} Flink 作业已提交"
+            echo -e "  ${GREEN}✅${NC} 2 个 Flink 作业已提交"
         else
             echo -e "  ${RED}❌${NC} JAR 上传失败"
         fi
     else
-        echo -e "  ${YELLOW}⚠️${NC}  未找到编译好的 JAR，请先运行 Maven 编译"
+        echo -e "  ${YELLOW}⚠️${NC}  未找到 JAR，请先编译 FlinkEngine"
     fi
 else
-    echo -e "  ${YELLOW}⚠️${NC}  Flink 不可达，跳过作业提交"
+    echo -e "  ${YELLOW}⚠️${NC}  Flink 不可达，跳过"
 fi
 
 # ========================================
-# 5. 传感器模拟器（可选，默认不启动）
-# ========================================
-echo -e "${GREEN}[5/5]${NC} 📡 传感器模拟器..."
-if [ "$1" = "--with-simulator" ]; then
-    echo -e "  ${YELLOW}⚠️  注意: 模拟器将触发 Flink→AgentServer→大模型调用（会产生 API 费用）${NC}"
-    cd "$PROJECT_DIR/DataIngestor"
-    kill $(pgrep -f "sensor_simulator" 2>/dev/null) 2>/dev/null || true
-    nohup python sensor_simulator.py > simulator.log 2>&1 &
-    SIM_PID=$!
-    echo -e "  ${GREEN}✅${NC} 传感器模拟器已启动 (PID: $SIM_PID)"
-    echo "  📋 日志: $PROJECT_DIR/DataIngestor/simulator.log"
-else
-    echo -e "  ⏭️  跳过（如需启动请加 ${YELLOW}--with-simulator${NC} 参数）"
-    echo -e "  💡 单独启动: cd DataIngestor && python sensor_simulator.py"
-fi
-
-# ========================================
-# 输出总览
+# 完成
 # ========================================
 echo ""
-echo "╔══════════════════════════════════════════════╗"
-echo "║   🎉 IAI 系统启动完成!                      ║"
-echo "╠══════════════════════════════════════════════╣"
-echo "║                                              ║"
-echo "║   📊 Grafana 大屏: http://192.168.0.105:3000 ║"
-echo "║   🧠 管理后台:     http://192.168.0.105:8000/dashboard  ║"
-echo "║   📖 API 文档:     http://192.168.0.105:8000/docs       ║"
-echo "║   ⚡ Flink 控制台: http://192.168.0.105:8081 ║"
-echo "║   🔧 Nacos 控制台: http://192.168.0.105:8848 ║"
-echo "║                                              ║"
-echo "╚══════════════════════════════════════════════╝"
+echo "═══════════════════════════════════════════════"
+echo -e " ${GREEN}🎉 应用层启动完成！${NC}"
+echo ""
+echo " 📊 Grafana 大屏:  http://192.168.0.105:3000"
+echo " 🧠 管理后台:      http://192.168.0.105:8000/dashboard"
+echo " 📖 API 文档:      http://192.168.0.105:8000/docs"
+echo " ⚡ Flink 控制台:  http://192.168.0.105:8081"
+echo " 🔧 Nacos 控制台:  http://192.168.0.105:8848"
+echo ""
+echo -e " 💡 启动传感器（${YELLOW}会触发大模型调用${NC}）:"
+echo "    cd DataIngestor && python sensor_simulator.py"
 echo ""
