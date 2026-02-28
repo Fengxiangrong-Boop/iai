@@ -74,7 +74,11 @@ public class AnomalyDetectionJob {
          * 实际执行 HTTP 调用的 SinkWriter
          */
         private static class HttpWebhookWriter implements SinkWriter<String> {
-            private final String webhookUrl = "http://192.168.0.105:8000/api/v1/alerts";
+            // 优先从环境变量 AGENT_SERVER_URL 读取，方便在不同环境切换
+            private final String webhookUrl = System.getenv().getOrDefault(
+                "AGENT_SERVER_URL",
+                "http://172.18.0.1:8000/api/v1/alerts"
+            );
 
             @Override
             public void write(String element, Context context) throws IOException, InterruptedException {
