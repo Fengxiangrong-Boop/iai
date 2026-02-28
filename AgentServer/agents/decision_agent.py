@@ -1,4 +1,5 @@
 from agents.base_agent import BaseAgent
+from services.nacos_config import NacosConfigManager
 
 DECISION_ROLE = """
 你是工厂高级维保决策专家。
@@ -13,10 +14,11 @@ DECISION_ROLE = """
 
 class DecisionAgent(BaseAgent):
     def __init__(self, llm_client, model_name: str = "gpt-4o"):
+        nacos_role = NacosConfigManager.get_config("agent.prompts.decision", default_val=DECISION_ROLE)
         # 决策智能体通常不需要自己去调 MCP 工具，它依赖上游的总结
         super().__init__(
             name="Decision_Maker",
-            role_description=DECISION_ROLE,
+            role_description=nacos_role,
             llm_client=llm_client,
             mcp_session=None, 
             model_name=model_name

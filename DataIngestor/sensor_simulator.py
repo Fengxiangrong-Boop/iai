@@ -2,7 +2,21 @@ import time
 import random
 import logging
 from datetime import datetime, timezone
+import requests
 from ingestor import DataIngestor
+
+NACOS_URL = "http://192.168.0.105:8848"
+def get_nacos_thresholds():
+    try:
+        resp = requests.get(f"{NACOS_URL}/nacos/v1/cs/configs", params={
+            "tenant": "", "dataId": "sensor.thresholds.json", "group": "DEFAULT_GROUP"
+        }, timeout=2)
+        if resp.status_code == 200:
+            import json
+            return json.loads(resp.text)
+    except:
+        pass
+    return {"pump_01_anomaly_prob": 0.05, "temperature_anomaly_threshold": 65.0, "vibration_anomaly_threshold": 1.2}
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -34,10 +48,13 @@ def simulate_data():
                 
                 status = "NORMAL"
                 
+                # 动态获取当前最新配置
+                cfg = get_nacos_thresholds()
+                
                 # 每隔一定的概率 (或者故意造点异常) 让 PUMP_01 飞温
-                if device["device_id"] == "PUMP_01" and random.random() < 0.05 and anomalies_triggered < 3:
-                    temp = 85.5 + random.uniform(0, 5)  # 超过阈值 (65)
-                    vib = 2.8 + random.uniform(0, 0.5)    # 超过阈值 (1.2)
+                if device["device_id"] == "PUMP_01" and random.random() < cfg.get("pump_01_anomaly_prob", 0.05) and anomalies_triggered < 3:
+                    temp = cfg.get("temperature_anomaly_threshold", 65.0) + random.uniform(10, 20)  # 超过阈值
+                    vib = cfg.get("vibration_anomaly_threshold", 1.2) + random.uniform(1.0, 1.5)    # 超过阈值
                     status = "ANOMALY"
                     anomalies_triggered += 1
                     logger.warning(f"🚨 触发模拟异常信号: PUMP_01 (Temp: {temp:.2f}, Vib: {vib:.2f})")

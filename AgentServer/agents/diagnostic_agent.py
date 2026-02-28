@@ -1,5 +1,6 @@
 from typing import List, Dict, Optional
 from agents.base_agent import BaseAgent
+from services.nacos_config import NacosConfigManager
 
 DIAGNOSTIC_ROLE = """
 你是工业物联网(IIoT)设备诊断专家。
@@ -17,9 +18,12 @@ DIAGNOSTIC_ROLE = """
 
 class DiagnosticAgent(BaseAgent):
     def __init__(self, llm_client, mcp_session, model_name: str = "gpt-4o"):
+        # 实时从 Nacos 拉取，如果是断网或没配置则使用兜底默认值
+        nacos_role = NacosConfigManager.get_config("agent.prompts.diagnostic", default_val=DIAGNOSTIC_ROLE)
+        
         super().__init__(
             name="Diagnostic_Expert",
-            role_description=DIAGNOSTIC_ROLE,
+            role_description=nacos_role,
             llm_client=llm_client,
             mcp_session=mcp_session,
             model_name=model_name
