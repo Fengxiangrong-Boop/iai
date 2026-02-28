@@ -103,6 +103,29 @@ def get_orders(page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=100)):
         return {"error": str(e)}
 
 
+@router.get("/api/v1/dashboard/report/{trace_id}")
+def get_report(trace_id: str):
+    """获取指定告警的 AI 诊断报告。"""
+    db = next(get_db())
+    try:
+        row = db.execute(text(
+            "SELECT trace_id, device_id, diagnosis_text, decision_text, fault_category, severity, "
+            "recommended_action, created_at "
+            "FROM diagnosis_report WHERE trace_id = :trace_id LIMIT 1"
+        ), {"trace_id": trace_id}).fetchone()
+
+        if not row:
+            return {"error": "诊断报告尚未生成或不存在"}
+
+        d = dict(row._mapping)
+        for k, v in d.items():
+            if hasattr(v, "isoformat"):
+                d[k] = v.isoformat()
+        return d
+    except Exception as e:
+        return {"error": str(e)}
+
+
 @router.get("/dashboard", response_class=HTMLResponse)
 def dashboard_page():
     """内嵌的单页 Web 管理界面。"""
@@ -200,6 +223,43 @@ def dashboard_page():
   .loading { text-align: center; padding: 40px; color: var(--text-muted); }
   .action-text { max-width: 400px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
+  /* 弹窗样式 */
+  .modal-overlay {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(15, 23, 42, 0.85); backdrop-filter: blur(4px);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 1000; opacity: 0; pointer-events: none; transition: opacity 0.2s;
+  }
+  .modal-overlay.active { opacity: 1; pointer-events: auto; }
+  .modal {
+    background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+    width: 90%; max-width: 800px; max-height: 90vh; display: flex; flex-direction: column;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+  }
+  .modal-header {
+    padding: 16px 24px; border-bottom: 1px solid var(--border);
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .modal-header h2 { font-size: 18px; margin: 0; }
+  .modal-header .close {
+    cursor: pointer; color: var(--text-muted); font-size: 24px; line-height: 1;
+  }
+  .modal-header .close:hover { color: var(--text); }
+  .modal-body {
+    padding: 24px; overflow-y: auto; line-height: 1.6; font-size: 14px;
+    white-space: pre-wrap; word-wrap: break-word; font-family: 'Segoe UI', system-ui;
+  }
+  .modal-body h4 { margin-top: 16px; margin-bottom: 8px; color: var(--accent); }
+  .modal-body .diag-box {
+    background: rgba(0,0,0,0.2); padding: 16px; border-radius: 8px; border: 1px dashed var(--border); margin-bottom: 16px;
+  }
+  
+  .btn {
+    background: transparent; border: 1px solid var(--accent); color: var(--accent);
+    padding: 4px 10px; border-radius: 6px; cursor: pointer; font-size: 12px; transition: all 0.2s;
+  }
+  .btn:hover { background: var(--accent); color: #0f172a; }
+
   @media (max-width: 768px) {
     .stats-row { grid-template-columns: repeat(2, 1fr); }
   }
@@ -231,6 +291,17 @@ def dashboard_page():
   </div>
 </div>
 
+<!-- 诊断报告弹窗 -->
+<div class="modal-overlay" id="reportModal" onclick="if(event.target===this) closeModal()">
+  <div class="modal">
+    <div class="modal-header">
+      <h2 id="modalTitle">🔍 AI 诊断报告</h2>
+      <span class="close" onclick="closeModal()">&times;</span>
+    </div>
+    <div class="modal-body" id="modalBody">加载中...</div>
+  </div>
+</div>
+
 <script>
 let currentTab = 'alerts';
 let currentPage = 1;
@@ -258,9 +329,9 @@ async function loadTable(tab, page) {
 
     let html = '<table><thead><tr>';
     if (tab === 'alerts') {
-      html += '<th>时间</th><th>设备</th><th>级别</th><th>温度</th><th>震动</th><th>Trace ID</th>';
+      html += '<th>时间</th><th>设备</th><th>级别</th><th>温度</th><th>震动</th><th>Trace ID</th><th>操作</th>';
     } else {
-      html += '<th>时间</th><th>工单号</th><th>设备</th><th>优先级</th><th>状态</th><th>建议操作</th>';
+      html += '<th>时间</th><th>工单号</th><th>设备</th><th>优先级</th><th>状态</th><th>建议操作</th><th>操作</th>';
     }
     html += '</tr></thead><tbody>';
 
@@ -274,6 +345,7 @@ async function loadTable(tab, page) {
           <td>${row.temperature ? row.temperature + '°C' : '-'}</td>
           <td>${row.vibration ? row.vibration + 'G' : '-'}</td>
           <td style="font-family:monospace;font-size:11px;color:var(--text-muted)">${(row.trace_id||'').slice(0,12)}...</td>
+          <td><button class="btn" onclick="viewReport('${row.trace_id}', '${row.device_id}')">查看诊断</button></td>
         </tr>`;
       } else {
         const st = row.status || 'PENDING';
@@ -284,6 +356,7 @@ async function loadTable(tab, page) {
           <td><span class="badge-level badge-${row.priority||'P1'}">${row.priority||'-'}</span></td>
           <td><span class="badge-status badge-${st}">${st}</span></td>
           <td class="action-text" title="${(row.recommended_action||'').replace(/"/g,'&quot;')}">${row.recommended_action || '-'}</td>
+          <td><button class="btn" onclick="viewReport('${row.trace_id}', '${row.device_id}')">查看诊断</button></td>
         </tr>`;
       }
     }
@@ -299,6 +372,48 @@ async function loadTable(tab, page) {
   } catch(e) {
     document.getElementById('table-content').innerHTML = `<div class="loading">加载失败: ${e.message}</div>`;
   }
+}
+
+async function viewReport(traceId, deviceId) {
+  if (!traceId || traceId === 'null') {
+    alert("该记录没有关联的诊断流水号 (Trace ID)");
+    return;
+  }
+  document.getElementById('reportModal').classList.add('active');
+  document.getElementById('modalTitle').textContent = `🔍 AI 诊断报告 - ${deviceId}`;
+  document.getElementById('modalBody').innerHTML = `<div class="loading">正在从知识库调取大模型诊断记录...</div>`;
+  
+  try {
+    const res = await fetch(`/api/v1/dashboard/report/${traceId}`);
+    const d = await res.json();
+    
+    if (d.error) {
+      document.getElementById('modalBody').innerHTML = `<div style="color:var(--danger)">${d.error}</div>`;
+      return;
+    }
+    
+    let reportHtml = `
+      <div style="font-size:12px;color:var(--text-muted);margin-bottom:16px;">
+        诊断时间: ${d.created_at} | 故障分级: <span class="badge-level badge-${d.severity || 'P1'}">${d.severity || '未知'}</span>
+      </div>
+      <h4>👨‍⚕️ 诊断专家分析报告</h4>
+      <div class="diag-box">${escapeHtml(d.diagnosis_text || '无详细分析记录')}</div>
+      
+      <h4>👨‍⚖️ 决策专家建议方案</h4>
+      <div class="diag-box" style="border-color:var(--success)">${escapeHtml(d.decision_text || '暂无决策建议')}</div>
+    `;
+    document.getElementById('modalBody').innerHTML = reportHtml;
+  } catch(e) {
+    document.getElementById('modalBody').innerHTML = `<div style="color:var(--danger)">加载报告失败: ${e.message}</div>`;
+  }
+}
+
+function closeModal() {
+  document.getElementById('reportModal').classList.remove('active');
+}
+
+function escapeHtml(unsafe) {
+    return (unsafe||'').replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
 function switchTab(tab) {
