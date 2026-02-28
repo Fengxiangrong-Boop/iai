@@ -37,12 +37,11 @@
             <version>4.0.0-2.0</version>
         </dependency>
 
-        <!-- JSON support: 使用 Flink 自带的 Jackson，避免版本冲突 -->
+        <!-- JSON support: 版本对齐 Flink 2.2 内置的 Jackson 2.15.x -->
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-databind</artifactId>
-            <version>2.17.0</version>
-            <scope>provided</scope>
+            <version>2.15.3</version>
         </dependency>
 
         <!-- HTTP client for Webhook calling -->
