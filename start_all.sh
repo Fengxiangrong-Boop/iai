@@ -24,7 +24,7 @@ echo ""
 # ========================================
 # 0. 检查 Docker 基础设施
 # ========================================
-echo -e "${GREEN}[0/3]${NC} 🐳 检查 Docker 基础设施..."
+echo -e "${GREEN}[0/4]${NC} 🐳 检查 Docker 基础设施..."
 RUNNING=$(docker ps --format '{{.Names}}' 2>/dev/null | grep -cE "kafka|mysql|influxdb|redis" || echo "0")
 if [ "$RUNNING" -lt 3 ] 2>/dev/null; then
     echo -e "  ${RED}❌ Docker 基础设施未启动！请先执行:${NC}"
@@ -36,7 +36,7 @@ echo -e "  ${GREEN}✅${NC} 基础设施正常 ($RUNNING 个核心服务运行�
 # ========================================
 # 1. 初始化 MySQL（首次自动建表）
 # ========================================
-echo -e "${GREEN}[1/3]${NC} 🗄️  检查 MySQL..."
+echo -e "${GREEN}[1/4]${NC} 🗄️  检查 MySQL..."
 INIT_SQL="$PROJECT_DIR/deploy/init-sql/init.sql"
 if [ -f "$INIT_SQL" ]; then
     TABLE_COUNT=$(docker exec mysql mysql -uroot -p'mysql@123' -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='iai'" -s -N 2>/dev/null || echo "0")
@@ -52,7 +52,7 @@ fi
 # ========================================
 # 2. 启动 AgentServer
 # ========================================
-echo -e "${GREEN}[2/3]${NC} 🧠 启动 AgentServer..."
+echo -e "${GREEN}[2/4]${NC} 🧠 启动 AgentServer..."
 cd "$PROJECT_DIR/AgentServer"
 
 kill $(pgrep -f "python api.py" 2>/dev/null) 2>/dev/null || true
@@ -68,7 +68,7 @@ echo -e "  ${GREEN}✅${NC} AgentServer 已启动 (PID: $AGENT_PID)"
 # ========================================
 # 3. 提交 Flink 作业
 # ========================================
-echo -e "${GREEN}[3/3]${NC} ⚡ 提交 Flink 作业..."
+echo -e "${GREEN}[3/4]${NC} ⚡ 提交 Flink 作业..."
 FLINK_URL="http://127.0.0.1:8081"
 FLINK_JAR="$PROJECT_DIR/FlinkEngine/target/FlinkEngine-1.0-SNAPSHOT.jar"
 
@@ -106,6 +106,29 @@ else
 fi
 
 # ========================================
+# 4. 初始化 Grafana 看板（首次自动配置）
+# ========================================
+echo -e "${GREEN}[4/4]${NC} 📊 检查 Grafana 看板..."
+GRAFANA_URL="http://127.0.0.1:3000"
+DASHBOARD_CHECK=$(curl -s -u admin:admin123 "$GRAFANA_URL/api/search?query=IAI" 2>/dev/null)
+HAS_DASHBOARD=$(echo "$DASHBOARD_CHECK" | python3 -c "
+import sys, json
+try:
+    data = json.load(sys.stdin)
+    print(len(data))
+except: print('0')
+" 2>/dev/null)
+
+if [ "$HAS_DASHBOARD" -gt 0 ] 2>/dev/null; then
+    echo -e "  ${GREEN}✅${NC} Grafana 看板已就绪"
+else
+    echo "  📥 首次配置 Grafana 数据源和看板..."
+    bash "$PROJECT_DIR/deploy/grafana/setup_grafana.sh" > /dev/null 2>&1 || true
+    bash "$PROJECT_DIR/deploy/grafana/update_dashboard.sh" > /dev/null 2>&1 || true
+    echo -e "  ${GREEN}✅${NC} Grafana 看板初始化完成"
+fi
+
+# ========================================
 # 完成
 # ========================================
 echo ""
@@ -117,6 +140,7 @@ echo " 🧠 管理后台:      http://192.168.0.105:8000/dashboard"
 echo " 📖 API 文档:      http://192.168.0.105:8000/docs"
 echo " ⚡ Flink 控制台:  http://192.168.0.105:8081"
 echo " 🔧 Nacos 控制台:  http://192.168.0.105:8848"
+echo " 📡 Kafka 浏览器:  http://192.168.0.105:9000"
 echo ""
 echo -e " 💡 启动传感器（${YELLOW}会触发大模型调用${NC}）:"
 echo "    cd DataIngestor && python sensor_simulator.py"
