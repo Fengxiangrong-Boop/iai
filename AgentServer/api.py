@@ -15,6 +15,7 @@ from mcp.client.stdio import stdio_client
 from logger import logger, get_logger_with_trace
 from agents.diagnostic_agent import DiagnosticAgent
 from agents.decision_agent import DecisionAgent
+from services.alert_service import AlertService
 
 # === 初始化环境与客户端 ===
 # 加载 .env 文件
@@ -123,7 +124,16 @@ async def process_alert_task(trace_id: str, alert_data: dict):
     背景任务：接收到告警后的多智能体工作流。
     """
     req_logger = get_logger_with_trace(trace_id)
+    device_id = alert_data.get("device_id", "UNKNOWN")
+    
+    # [Phase 2] 0. 告警去重判断 (Redis 5分钟冷却窗)
+    if AlertService.is_cooling_down(device_id):
+        req_logger.warning(f"❄️ 设备 {device_id} 在5分钟冷却期内，本次重复告警被过滤。")
+        return
+        
+    # [Phase 2] 0.5 记录告警入库
     req_logger.info(f"📍 开始处理设备告警, Data: {alert_data}")
+    AlertService.record_alert(trace_id, alert_data)
     
     try:
         # 1. 启动诊断专家
@@ -145,7 +155,12 @@ async def process_alert_task(trace_id: str, alert_data: dict):
         decision = await decision_agent.make_decision(diagnostic_report=report)
         req_logger.info(f"📜 最终维保决策:\n{decision}")
         
-        req_logger.info("✅ 告警流转处理闭环完成。该结果可通过邮件系统发送，或存入数据库。")
+        # [Phase 2] 3. 诊断报告和工单自动入库落盘 (闭环)
+        req_logger.info("💾 [步骤 3] 正在落盘诊断报告与工单记录...")
+        AlertService.save_diagnosis(trace_id, device_id, report, decision)
+        AlertService.create_work_order(trace_id, device_id, decision)
+        
+        req_logger.info("✅ 告警智能诊断流转处理和工单入库闭环全部完成！")
         
     except Exception as e:
         req_logger.error(f"❌ 处理流转异常: {e}", exc_info=True)
