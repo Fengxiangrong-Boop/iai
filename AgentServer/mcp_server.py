@@ -2,93 +2,143 @@ import json
 from mcp.server.fastmcp import FastMCP
 from typing import Optional
 
+from sqlalchemy import text
+from models.database import get_db, get_influx_client, INFLUXDB_BUCKET
+
 # 初始化 FastMCP 服务器
 mcp = FastMCP("IIoT_Expert_Tools")
-
-# 模拟的 MySQL 数据库 (静态元数据)
-DEVICE_DB = {
-    "PUMP_01": {"model": "QW-100", "location": "车间A区", "install_date": "2023-01-15", "max_temp": 65.0, "max_vibration": 1.2},
-    "PUMP_02": {"model": "QW-150", "location": "车间B区", "install_date": "2022-11-20", "max_temp": 70.0, "max_vibration": 1.5},
-    "PUMP_03": {"model": "QW-100", "location": "车间A区", "install_date": "2024-02-10", "max_temp": 65.0, "max_vibration": 1.2},
-}
-
-# 模拟的知识库和维修记录 (Mock)
-MAINTENANCE_KB = [
-    {"device_id": "PUMP_01", "date": "2023-08-10", "issue": "轴承异响，震动偏大", "action": "更换前端轴承并加注润滑油"},
-    {"device_id": "PUMP_01", "date": "2024-01-05", "issue": "温度传感器漂移", "action": "重新校准 PT100 传感器"},
-    {"device_id": "PUMP_02", "date": "2023-05-12", "issue": "密封圈老化漏水", "action": "更换机械密封组件"},
-]
 
 @mcp.tool()
 def query_device_status(device_id: str) -> str:
     """
     根据设备 ID 查询设备的静态元数据和设计参数。
-    (模拟查询 MySQL 关系型数据库)
+    (真实查询 MySQL 关系型数据库)
     
     参数:
     - device_id: 设备的唯一标识符 (例如：PUMP_01)
     """
-    device_id = device_id.upper()
-    data = DEVICE_DB.get(device_id)
-    if data:
-        return json.dumps({"status": "success", "data": data}, ensure_ascii=False)
-    return json.dumps({"status": "error", "message": f"未找到设备 {device_id} 的元数据。"}, ensure_ascii=False)
+    db = next(get_db())
+    try:
+        device_id = device_id.upper()
+        query = text("SELECT * FROM device_registry WHERE device_id = :device_id")
+        result = db.execute(query, {"device_id": device_id}).fetchone()
+        
+        if result:
+            data = dict(result._mapping)
+            for key, val in data.items():
+                if hasattr(val, "isoformat"):
+                    data[key] = val.isoformat()
+                elif hasattr(val, "normalize"): # 处理 Decimal 类型
+                    data[key] = float(val)
+            return json.dumps({"status": "success", "data": data}, ensure_ascii=False)
+        return json.dumps({"status": "error", "message": f"未找到设备 {device_id} 的元数据。"}, ensure_ascii=False)
+    except Exception as e:
+        return json.dumps({"status": "error", "message": str(e)}, ensure_ascii=False)
 
 @mcp.tool()
 def fetch_telemetry_data(device_id: str, window_mins: int = 60) -> str:
     """
     获取设备过去指定时间窗口内（默认60分钟）的关键遥测数据统计（如温度、震动的均值、峰值）。
-    (模拟查询 InfluxDB 时序数据库)
+    (真实查询 InfluxDB 时序数据库)
     
     参数:
     - device_id: 设备的唯一标识符 (例如：PUMP_01)
     - window_mins: 往前追溯的时间窗口大小（分钟）
     """
-    device_id = device_id.upper()
-    if device_id not in DEVICE_DB:
-        return json.dumps({"status": "error", "message": f"未找到设备 {device_id}。"}, ensure_ascii=False)
+    client = get_influx_client()
+    try:
+        device_id = device_id.upper()
+        query_api = client.query_api()
         
-    # 模拟时序数据聚合结果
-    mock_stats = {
-        "device_id": device_id,
-        "window_mins": window_mins,
-        "temperature_avg": 45.3,
-        "temperature_peak": 48.1,
-        "vibration_avg": 0.52,
-        "vibration_peak": 0.65,
-        "anomaly_count": 0
-    }
-    
-    # 为了演练效果，如果我们查 PUMP_01，我们可以捏造它刚出现过温度峰值
-    if device_id == "PUMP_01":
-        mock_stats["temperature_peak"] = 85.2
-        mock_stats["vibration_peak"] = 2.8
-        mock_stats["anomaly_count"] = 3
+        # 实时聚合查询 InfluxDB
+        flux_query = f'''
+            from(bucket:"{INFLUXDB_BUCKET}")
+            |> range(start: -{window_mins}m)
+            |> filter(fn: (r) => r["_measurement"] == "sensor_raw")
+            |> filter(fn: (r) => r["device_id"] == "{device_id}")
+            |> filter(fn: (r) => r["_field"] == "temperature" or r["_field"] == "vibration")
+            |> yield(name: "raw")
+        '''
+        tables = query_api.query(flux_query)
         
-    return json.dumps({"status": "success", "data": mock_stats}, ensure_ascii=False)
+        temp_vals = []
+        vib_vals = []
+        for table in tables:
+            for record in table.records:
+                if record.get_field() == "temperature":
+                    temp_vals.append(record.get_value())
+                elif record.get_field() == "vibration":
+                    vib_vals.append(record.get_value())
+                    
+        if not temp_vals and not vib_vals:
+            return json.dumps({
+                "status": "success", 
+                "message": f"所选时间段内尚未生成设备 {device_id} 的真实遥测数据，等待采集层输入。", 
+                "data": {"temperature_avg": 0, "temperature_peak": 0, "vibration_avg": 0, "vibration_peak": 0}
+            }, ensure_ascii=False)
+            
+        mock_stats = {
+            "device_id": device_id,
+            "window_mins": window_mins,
+            "temperature_avg": round(sum(temp_vals)/len(temp_vals), 2),
+            "temperature_peak": round(max(temp_vals), 2),
+            "vibration_avg": round(sum(vib_vals)/len(vib_vals), 3),
+            "vibration_peak": round(max(vib_vals), 3),
+            "anomaly_count": 0 
+        }
+        return json.dumps({"status": "success", "data": mock_stats}, ensure_ascii=False)
+    except Exception as e:
+        return json.dumps({"status": "error", "message": f"InfluxDB 查询失败: {str(e)}"}, ensure_ascii=False)
+    finally:
+        client.close()
 
 @mcp.tool()
-def search_maintenance_kb(device_id: str, query: Optional[str] = None) -> str:
+def search_maintenance_kb(device_id: str, query_str: Optional[str] = None) -> str:
     """
-    搜索特定设备的过往维修记录和通用专家知识库。
+    搜索特定设备的通用专家知识库。
     
     参数:
     - device_id: 设备的唯一标识符 (例如：PUMP_01)
-    - query: 可选，具体的故障现象关键词查询
+    - query_str: 可选，具体的故障现象关键词查询
     """
-    device_id = device_id.upper()
-    records = [r for r in MAINTENANCE_KB if r["device_id"] == device_id]
-    
-    if query:
-        records = [r for r in records if query in r["issue"] or query in r["action"]]
+    db = next(get_db())
+    try:
+        device_id = device_id.upper()
+        # 查询设备类型用于过滤知识库
+        query_type = text("SELECT device_type FROM device_registry WHERE device_id = :device_id")
+        type_res = db.execute(query_type, {"device_id": device_id}).fetchone()
         
-    kb_info = "通用泵类知识：若温度高于 80 度且伴随剧烈震动，极大概率为轴承严重磨损或转子不平衡，需立即停机检查。"
-    
-    return json.dumps({
-        "status": "success",
-        "maintenance_records": records,
-        "expert_guidance": kb_info
-    }, ensure_ascii=False)
+        device_type = "pump"
+        if type_res:
+            device_type = type_res._mapping['device_type']
+            
+        # 模糊匹配搜索
+        if query_str:
+            sql = """
+                SELECT fault_pattern, symptoms, root_cause, solution, prevention 
+                FROM maintenance_kb 
+                WHERE device_type = :device_type 
+                AND (fault_pattern LIKE :query OR symptoms LIKE :query OR root_cause LIKE :query)
+            """
+            kb_res = db.execute(text(sql), {"device_type": device_type, "query": f"%{query_str}%"}).fetchall()
+        else:
+            sql = "SELECT fault_pattern, symptoms, root_cause, solution, prevention FROM maintenance_kb WHERE device_type = :device_type"
+            kb_res = db.execute(text(sql), {"device_type": device_type}).fetchall()
+            
+        records = [dict(r._mapping) for r in kb_res]
+        
+        # 过滤日期类型确保 JSON 序列化
+        for rec in records:
+            for k, v in rec.items():
+                if hasattr(v, "isoformat"): rec[k] = v.isoformat()
+                
+        return json.dumps({
+            "status": "success",
+            "device_type": device_type,
+            "expert_guidance": records,
+        }, ensure_ascii=False)
+    except Exception as e:
+        return json.dumps({"status": "error", "message": f"MySQL 查询失败: {str(e)}"}, ensure_ascii=False)
 
 if __name__ == "__main__":
     mcp.run()
