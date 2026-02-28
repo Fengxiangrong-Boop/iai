@@ -138,7 +138,7 @@ IAI/
 
 - Docker & Docker Compose v2+
 - Python 3.10+
-- 智谱AI API Key（[获取地址](https://open.bigmodel.cn)）或使用本地 Ollama（免费）
+- 推荐使用本地 Ollama（开发测试默认，完全免费），或提供智谱AI API Key（[获取地址](https://open.bigmodel.cn)）
 
 ### 第 1 步：克隆项目
 
@@ -156,53 +156,35 @@ docker compose ps   # 确认所有服务 Up
 
 ### 第 3 步：选择大模型方案
 
-**方案 A：本地 Ollama（开发测试，完全免费 💰）**
+**方案 A：本地 Ollama（开发测试默认，完全免费 💰）**
 ```bash
-# 拉取中文模型
+# 拉取中文模型（如已拉取可跳过）
 docker exec ollama ollama pull qwen2.5:7b
 
-# 使用本地模型配置
-cd AgentServer
-cp .env.ollama .env
+# 项目已默认使用 .env.ollama（cp .env.ollama .env），无需额外配置
 ```
 
 **方案 B：智谱 GLM-4（生产环境，按量付费）**
 ```bash
 cd AgentServer
 cp .env.cloud .env
-# 编辑 .env 填入你的 API Key
+# 编辑 .env 将 your_zhipu_api_key_here 替换为你的真实 API Key
 ```
 
-### 第 4 步：启动应用服务
+### 第 4 步：一键启动应用服务与验证
 
 ```bash
-cd ..
 bash start_all.sh
 ```
+`start_all.sh` 脚本将自动完成以下操作：
+1. 自动初始化 MySQL 和 Grafana 数据源、大屏看板
+2. 启动 AgentServer 和提交 Flink 分布式作业
+3. **启动传感器模拟器（自动生成测试数据并触发大模型诊断流）**
 
-### 第 5 步：配置 Grafana 大屏（首次）
-
-```bash
-bash deploy/grafana/setup_grafana.sh
-```
-
-### 第 6 步：验证系统
-
-```bash
-# 发送测试告警
-curl -X POST http://localhost:8000/api/v1/alerts \
-     -H "Content-Type: application/json" \
-     -d '{
-  "device_id": "PUMP_01",
-  "status": "ANOMALY",
-  "temperature": 92.3,
-  "vibration": 3.5,
-  "timestamp": "2026-02-28T06:53:00Z"
-}'
-
-# 查看 AI 诊断过程
-tail -f AgentServer/api_server.log
-```
+您可以通过以下方式观察系统运行情况：
+- 访问 [Grafana 实时大屏](http://localhost:3000) (admin/admin123) 监控温度与震动趋势
+- 访问 [Kafdrop Web 浏览器](http://localhost:9000) 查阅底层消息总线流转情况
+- 运行 `tail -f AgentServer/api_server.log` 旁观 AI 多智能体系统的诊断推理思考过程
 
 ## 🔌 服务端口总览
 
@@ -247,20 +229,16 @@ GET /docs                        # Swagger API 文档
 
 ## 🎮 运维操作手册
 
-### 日常启停
+### 统一启停管理
+
+项目现已实现一键脚本接管全链路服务的启停自动化（包含 Docker 基础设施、应用服务框架以及传感器模拟器）：
 
 ```bash
-# 基础设施
-docker compose up -d          # 启动
-docker compose down           # 停止
-docker compose logs -f kafka  # 查看日志
+# 🟢 一键启动（完整唤醒 IAI 全链路服务）
+docker compose up -d && bash start_all.sh
 
-# 应用服务
-bash start_all.sh             # 启动 AgentServer + Flink 作业
-bash stop_all.sh              # 停止应用服务
-
-# 传感器模拟（⚠️ 会触发大模型调用）
-cd DataIngestor && python sensor_simulator.py
+# 🛑 一键停止（完整下线所有容器与相关服务）
+bash stop_all.sh && docker compose down
 ```
 
 ### 模型切换
