@@ -23,18 +23,20 @@ echo ""
 # ========================================
 # 1. 启动 Docker 基础设施
 # ========================================
-echo -e "${GREEN}[1/5]${NC} 🐳 启动 Docker 基础设施 (Kafka/InfluxDB/MySQL/Redis/Nacos/Flink/Grafana)..."
-if [ -f "$PROJECT_DIR/docker-compose.yml" ]; then
+echo -e "${GREEN}[1/5]${NC} 🐳 检查 Docker 基础设施..."
+# 检测关键容器是否已在运行
+RUNNING_CONTAINERS=$(docker ps --format '{{.Names}}' 2>/dev/null | grep -cE "kafka|mysql|influxdb|redis" || echo "0")
+if [ "$RUNNING_CONTAINERS" -ge 3 ] 2>/dev/null; then
+    echo -e "  ${GREEN}✅${NC} Docker 基础设施已在运行 ($RUNNING_CONTAINERS 个核心服务)"
+elif [ -f "$PROJECT_DIR/docker-compose.yml" ]; then
     cd "$PROJECT_DIR"
     docker-compose up -d 2>/dev/null || docker compose up -d 2>/dev/null
     echo -e "  ${GREEN}✅${NC} Docker 基础设施已启动"
+    echo "  ⏳ 等待服务就绪 (15秒)..."
+    sleep 15
 else
-    echo -e "  ${YELLOW}⚠️${NC}  未找到 docker-compose.yml，跳过（假设基础设施已手动启动）"
+    echo -e "  ${YELLOW}⚠️${NC}  请手动启动 Docker 基础设施"
 fi
-
-# 等待服务就绪
-echo "  ⏳ 等待服务就绪 (15秒)..."
-sleep 15
 
 # ========================================
 # 2. 初始化 MySQL（如果需要）
