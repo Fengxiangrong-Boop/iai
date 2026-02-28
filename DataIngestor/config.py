@@ -6,7 +6,7 @@ load_dotenv()
 # ================================
 # Kafka Configuration
 # ================================
-KAFKA_BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "192.168.0.105:9092")
+KAFKA_BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "192.168.0.105:9094")
 KAFKA_RAW_TOPIC = "raw_sensor_data"
 
 # ================================
