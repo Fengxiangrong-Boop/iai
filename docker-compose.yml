@@ -20,6 +20,8 @@ services:
     container_name: zookeeper
     ports:
       - "2181:2181"
+    volumes:
+      - zookeeper_data:/opt/zookeeper-3.4.13/data
     networks:
       - iai-network
 
@@ -209,3 +211,5 @@ volumes:
   nacos_data:
   grafana_data:
   ollama_data:
+  zookeeper_data:
+

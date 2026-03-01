@@ -59,7 +59,20 @@ fi
 echo -e "${GREEN}[2/6]${NC} 🔧 初始化 Nacos 配置..."
 NACOS_INIT="$PROJECT_DIR/deploy/nacos_config_init.py"
 if [ -f "$NACOS_INIT" ]; then
-    NACOS_CHECK=$(curl -s "http://127.0.0.1:8848/nacos/v1/cs/configs?dataId=sensor.thresholds.json&group=DEFAULT_GROUP" 2>/dev/null)
+    # 等待 Nacos 启动就绪，避免 curl 直接失败触发 set -e
+    NACOS_WAIT=0
+    while ! curl -s "http://127.0.0.1:8848/nacos/v2/cs/config?dataId=sensor.thresholds.json&group=DEFAULT_GROUP" > /dev/null 2>&1; do
+        if [ $NACOS_WAIT -ge 60 ]; then
+            echo -e "  ${RED}❌${NC} Nacos 启动超时，请检查后重试"
+            break
+        fi
+        echo -ne "  ⏳ 等待 Nacos 启动... ${NACOS_WAIT}s\r"
+        sleep 5
+        NACOS_WAIT=$((NACOS_WAIT + 5))
+    done
+    echo ""
+
+    NACOS_CHECK=$(curl -s "http://127.0.0.1:8848/nacos/v1/cs/configs?dataId=sensor.thresholds.json&group=DEFAULT_GROUP" 2>/dev/null || echo "")
     if [ -z "$NACOS_CHECK" ] || echo "$NACOS_CHECK" | grep -q "error"; then
         cd "$PROJECT_DIR"
         python deploy/nacos_config_init.py 2>/dev/null || true
