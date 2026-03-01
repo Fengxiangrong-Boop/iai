@@ -139,23 +139,42 @@ except: print('0')
 
     if [ "$RUNNING_JOBS" -ge 2 ] 2>/dev/null; then
         echo -e "  ${GREEN}✅${NC} Flink 作业已在运行 ($RUNNING_JOBS 个)"
-    elif [ -f "$FLINK_JAR" ]; then
-        echo "  📦 上传并启动 Flink 作业..."
-        JAR_RESP=$(curl -s -X POST "$FLINK_URL/jars/upload" -H "Expect:" -F "jarfile=@$FLINK_JAR" 2>/dev/null)
-        JAR_ID=$(echo "$JAR_RESP" | python3 -c "import sys,json; print(json.load(sys.stdin).get('filename','').split('/')[-1])" 2>/dev/null)
-
-        if [ -n "$JAR_ID" ] && [ "$JAR_ID" != "None" ]; then
-            curl -s -X POST "$FLINK_URL/jars/$JAR_ID/run" -H "Content-Type: application/json" \
-                 -d '{"entryClass": "com.iai.flink.AnomalyDetectionJob"}' > /dev/null 2>&1
-            curl -s -X POST "$FLINK_URL/jars/$JAR_ID/run" -H "Content-Type: application/json" \
-                 -d '{"entryClass": "com.iai.flink.MetricsAggregationJob"}' > /dev/null 2>&1
-            sleep 3
-            echo -e "  ${GREEN}✅${NC} 2 个 Flink 作业已提交"
-        else
-            echo -e "  ${RED}❌${NC} JAR 上传失败"
-        fi
     else
-        echo -e "  ${YELLOW}⚠️${NC}  未找到 JAR，请先编译 FlinkEngine"
+        # 自动编译打包
+        if [ ! -f "$FLINK_JAR" ]; then
+            echo -e "  ${YELLOW}⚠️${NC}  未找到 JAR，开始自动编译打包 (这可能需要几分钟)..."
+            docker run --rm \
+              -v "$PROJECT_DIR/FlinkEngine":/app \
+              -v ~/.m2:/root/.m2 \
+              -w /app \
+              maven:3.9-eclipse-temurin-17 \
+              mvn clean package -DskipTests > "$PROJECT_DIR/FlinkEngine/maven_build.log" 2>&1
+            if [ -f "$FLINK_JAR" ]; then
+                echo -e "  ${GREEN}✅${NC} 自动打包完成"
+            else
+                echo -e "  ${RED}❌${NC} 自动打包失败，请检查 $PROJECT_DIR/FlinkEngine/maven_build.log"
+            fi
+        fi
+
+        if [ -f "$FLINK_JAR" ]; then
+            echo "  📦 上传并启动 Flink 作业..."
+            JAR_RESP=$(curl -s -X POST "$FLINK_URL/jars/upload" -H "Expect:" -F "jarfile=@$FLINK_JAR" 2>/dev/null)
+            JAR_ID=$(echo "$JAR_RESP" | python3 -c "import sys,json; try: print(json.load(sys.stdin).get('filename','').split('/')[-1])
+except: print('')" 2>/dev/null)
+
+            if [ -n "$JAR_ID" ] && [ "$JAR_ID" != "None" ]; then
+                # 提交第一个作业：异常检测
+                curl -s -X POST "$FLINK_URL/jars/$JAR_ID/run" -H "Content-Type: application/json" \
+                     -d '{"entryClass": "com.iai.flink.AnomalyDetectionJob"}' > /dev/null 2>&1
+                # 提交第二个作业：指标聚合
+                curl -s -X POST "$FLINK_URL/jars/$JAR_ID/run" -H "Content-Type: application/json" \
+                     -d '{"entryClass": "com.iai.flink.MetricsAggregationJob"}' > /dev/null 2>&1
+                sleep 3
+                echo -e "  ${GREEN}✅${NC} 2 个 Flink 作业已提交"
+            else
+                echo -e "  ${RED}❌${NC} JAR 上传或解析失败"
+            fi
+        fi
     fi
 else
     echo -e "  ${YELLOW}⚠️${NC}  Flink 不可达，跳过"
