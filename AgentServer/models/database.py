@@ -24,6 +24,8 @@ engine = create_engine(
     SQLALCHEMY_DATABASE_URL,
     pool_pre_ping=True,
     pool_recycle=3600,
+    pool_size=20,          # 提高基础连接池大小
+    max_overflow=40        # 提高溢出连接上限
 )
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 

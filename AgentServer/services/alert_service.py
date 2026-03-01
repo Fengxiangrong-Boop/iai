@@ -40,7 +40,7 @@ class AlertService:
     @staticmethod
     def record_alert(trace_id: str, payload: dict):
         """Save raw alert mapping to MySQL."""
-        db = next(get_db())
+        db = SessionLocal()
         try:
             sql = text("""
                 INSERT INTO alert_log (trace_id, device_id, alert_level, alert_type, temperature, vibration, raw_payload)
@@ -59,11 +59,13 @@ class AlertService:
         except Exception as e:
             db.rollback()
             logger.error(f"Failed to record alert: {e}")
+        finally:
+            db.close()
 
     @staticmethod
     def save_diagnosis(trace_id: str, device_id: str, report: str, decision: str):
         """Save AI Diagnosis and upgrade Alert status to COMPLETED."""
-        db = next(get_db())
+        db = SessionLocal()
         try:
             sql = text("""
                 INSERT INTO diagnosis_report (trace_id, device_id, diagnosis_text, decision_text, fault_category, severity)
@@ -85,11 +87,13 @@ class AlertService:
         except Exception as e:
             db.rollback()
             logger.error(f"Failed to save AI diagnosis report: {e}")
+        finally:
+            db.close()
 
     @staticmethod
     def create_work_order(trace_id: str, device_id: str, decision: str):
         """Automatically create a Work Order based on AI Decision."""
-        db = next(get_db())
+        db = SessionLocal()
         try:
             now = datetime.now().strftime("%Y%m%d")
             order_no = f"WO-{now}-{uuid.uuid4().hex[:6].upper()}"
@@ -108,3 +112,5 @@ class AlertService:
         except Exception as e:
             db.rollback()
             logger.error(f"Failed to create Work Order: {e}")
+        finally:
+            db.close()
