@@ -158,21 +158,24 @@ except: print('0')
 
         if [ -f "$FLINK_JAR" ]; then
             echo "  📦 上传并启动 Flink 作业..."
-            JAR_RESP=$(curl -s -X POST "$FLINK_URL/jars/upload" -H "Expect:" -F "jarfile=@$FLINK_JAR" 2>/dev/null)
-            JAR_ID=$(echo "$JAR_RESP" | python3 -c "import sys,json; try: print(json.load(sys.stdin).get('filename','').split('/')[-1])
-except: print('')" 2>/dev/null)
+            JAR_RESP=$(curl -s -X POST "$FLINK_URL/jars/upload" -H "Expect:" -F "jarfile=@$FLINK_JAR" 2>/dev/null || true)
+            JAR_ID=$(echo "$JAR_RESP" | python3 -c "import sys,json
+try:
+    print(json.load(sys.stdin).get('filename','').split('/')[-1])
+except Exception:
+    print('')" 2>/dev/null || true)
 
             if [ -n "$JAR_ID" ] && [ "$JAR_ID" != "None" ]; then
                 # 提交第一个作业：异常检测
                 curl -s -X POST "$FLINK_URL/jars/$JAR_ID/run" -H "Content-Type: application/json" \
-                     -d '{"entryClass": "com.iai.flink.AnomalyDetectionJob"}' > /dev/null 2>&1
+                     -d '{"entryClass": "com.iai.flink.AnomalyDetectionJob"}' > /dev/null 2>&1 || true
                 # 提交第二个作业：指标聚合
                 curl -s -X POST "$FLINK_URL/jars/$JAR_ID/run" -H "Content-Type: application/json" \
-                     -d '{"entryClass": "com.iai.flink.MetricsAggregationJob"}' > /dev/null 2>&1
+                     -d '{"entryClass": "com.iai.flink.MetricsAggregationJob"}' > /dev/null 2>&1 || true
                 sleep 3
                 echo -e "  ${GREEN}✅${NC} 2 个 Flink 作业已提交"
             else
-                echo -e "  ${RED}❌${NC} JAR 上传或解析失败"
+                echo -e "  ${RED}❌${NC} JAR 上传或解析失败. CURL返回: $JAR_RESP"
             fi
         fi
     fi
