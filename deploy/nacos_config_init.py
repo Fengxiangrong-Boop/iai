@@ -1,11 +1,12 @@
 import os
-import requests
 import json
 import logging
+import urllib.request
+import urllib.parse
 
 logging.basicConfig(level=logging.INFO, format='%(message)s')
 
-NACOS_URL = os.getenv("NACOS_URL", "http://192.168.0.105:8848")
+NACOS_URL = os.getenv("NACOS_URL", "http://127.0.0.1:8848")
 NAMESPACE_ID = "" # Default public namespace
 
 def publish_config(data_id, group, content, content_type="text"):
@@ -17,14 +18,19 @@ def publish_config(data_id, group, content, content_type="text"):
         "content": content,
         "type": content_type
     }
+    encoded_data = urllib.parse.urlencode(data).encode("utf-8")
+    req = urllib.request.Request(url, data=encoded_data)
+    
     try:
-        response = requests.post(url, data=data, timeout=5)
-        if response.status_code == 200 and response.text == "true":
-            logging.info(f"✅ 成功发布配置: {data_id} [{group}]")
-            return True
-        else:
-            logging.error(f"❌ 失败发布配置: {data_id} - HTTP {response.status_code}: {response.text}")
-            return False
+        with urllib.request.urlopen(req, timeout=5) as response:
+            status_code = response.getcode()
+            response_text = response.read().decode("utf-8")
+            if status_code == 200 and response_text == "true":
+                logging.info(f"✅ 成功发布配置: {data_id} [{group}]")
+                return True
+            else:
+                logging.error(f"❌ 失败发布配置: {data_id} - HTTP {status_code}: {response_text}")
+                return False
     except Exception as e:
         logging.error(f"⚠️ 请求 Nacos 失败: {e}")
         return False
