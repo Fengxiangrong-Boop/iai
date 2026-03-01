@@ -88,8 +88,11 @@ fi
 echo -e "${GREEN}[3/6]${NC} 🧠 启动 AgentServer..."
 cd "$PROJECT_DIR/AgentServer"
 
-kill $(pgrep -f "python api.py" 2>/dev/null) 2>/dev/null || true
-sleep 1
+kill -9 $(pgrep -f "python api.py" 2>/dev/null) 2>/dev/null || true
+kill -9 $(pgrep -f "uvicorn api:app" 2>/dev/null) 2>/dev/null || true
+# 如果存在占用 8000 端口的其他进程（例如之前的残留），一并清理
+fuser -k 8000/tcp 2>/dev/null || true
+sleep 2
 
 pip install -r requirements.txt -q 2>/dev/null || true
 
