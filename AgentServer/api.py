@@ -216,26 +216,27 @@ async def receive_alert(payload: AlertPayload, background_tasks: BackgroundTasks
 @app.post("/api/v1/chat", response_model=ChatResponse, summary="终端聊天入口")
 async def chat_endpoint(request: ChatRequest):
     """
-    预留的人机交互接口，可以实现自由提问等能力。
-    （注：目前简单起见，单智能体直接回复，如果需要同样支持调用工具，可以单独实例化一个 Agent）
+    RAG 增强的人机交互接口。
+    会通过 Qdrant 进行历史结案经验检索，使 AI 具备厂家手册和本厂大拿的维修知识储备。
     """
     trace_id = uuid.uuid4().hex
     req_logger = get_logger_with_trace(trace_id)
-    req_logger.info(f"💬 收到聊天请求: {request.query}")
+    req_logger.info(f"💬 收到 RAG Chat 请求: {request.query}")
     
-    # 临时启动一个通用询问，暂不调用完整流转
+    # 引入 RAG 增强对话逻辑
+    from agents.chat_agent import run_rag_chat
+    
     try:
-        response = await llm_client.chat.completions.create(
-            model=MODEL_NAME,
-            messages=[
-                {"role": "system", "content": "你是工厂的AI助手。"},
-                {"role": "user", "content": request.query}
-            ]
+        # 运行带 RAG 上下文的对话 (基于 qwen2.5:7b)
+        answer = await run_rag_chat(
+            llm_client=llm_client,
+            model_name=MODEL_NAME,
+            query=request.query,
+            trace_id=trace_id
         )
-        answer = response.choices[0].message.content
         return ChatResponse(trace_id=trace_id, answer=answer)
     except Exception as e:
-        req_logger.error(f"LLM 请求失败: {e}", exc_info=True)
+        req_logger.error(f"RAG Chat 请求失败: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/v1/health", summary="健康探针")
