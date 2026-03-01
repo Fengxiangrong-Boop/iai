@@ -144,5 +144,76 @@ def search_maintenance_kb(device_id: str, query_str: Optional[str] = None) -> st
     finally:
         db.close()
 
+
+@mcp.tool()
+def analyze_historical_trend(device_id: str, metric: str = "temperature", hours_back: int = 12) -> str:
+    """
+    分析设备在过去较长时间内（如12或24小时）的核心指标衰退趋势。
+    将时序数据按小时进行降采样，并计算每小时的均值，有助于发现设备的“慢性疾病”（如缓慢升温、磨损加剧）。
+    
+    参数:
+    - device_id: 设备的唯一标识符 (例如：PUMP_01)
+    - metric: 分析指标，支持 "temperature" (温度) 或 "vibration" (震动)
+    - hours_back: 分析过去多少小时的趋势，默认 12 小时
+    """
+    client = get_influx_client()
+    try:
+        device_id = device_id.upper()
+        if metric not in ["temperature", "vibration"]:
+            return json.dumps({"status": "error", "message": "不支持的统计指标，仅支持 temperature 或 vibration"}, ensure_ascii=False)
+            
+        query_api = client.query_api()
+        
+        # Flux 查询语法：按 1 小时为聚合窗口 (aggregateWindow)，求每小时均值
+        flux_query = f'''
+            from(bucket:"{INFLUXDB_BUCKET}")
+            |> range(start: -{hours_back}h)
+            |> filter(fn: (r) => r["_measurement"] == "sensor_raw")
+            |> filter(fn: (r) => r["device_id"] == "{device_id}")
+            |> filter(fn: (r) => r["_field"] == "{metric}")
+            |> aggregateWindow(every: 1h, fn: mean, createEmpty: false)
+            |> yield(name: "mean")
+        '''
+        
+        tables = query_api.query(flux_query)
+        
+        trend_data = []
+        for table in tables:
+            for record in table.records:
+                time_str = record.get_time().strftime("%Y-%m-%d %H:00")
+                val = record.get_value()
+                if val is not None:
+                    trend_data.append({"time_window": time_str, "average_value": round(val, 2)})
+                    
+        if not trend_data:
+            return json.dumps({
+                "status": "success", 
+                "message": f"过去 {hours_back} 小时内无 {device_id} 的 {metric} 数据。"
+            }, ensure_ascii=False)
+            
+        # 简单计算一下漂移量（最后一条减第一条）
+        first_val = trend_data[0]["average_value"]
+        last_val = trend_data[-1]["average_value"]
+        drift = round(last_val - first_val, 2)
+        
+        summary = f"平稳"
+        if drift > 0:
+            summary = f"呈现上升趋势 (总增幅 {drift})"
+        elif drift < 0:
+            summary = f"呈现下降趋势 (总降幅 {abs(drift)})"
+
+        return json.dumps({
+            "status": "success",
+            "analysis_metric": metric,
+            "period": f"过去 {hours_back} 小时, 每 1 小时为统计窗口",
+            "overall_trend": summary,
+            "trend_data_points": trend_data
+        }, ensure_ascii=False)
+        
+    except Exception as e:
+        return json.dumps({"status": "error", "message": f"InfluxDB 趋势分析查询失败: {str(e)}"}, ensure_ascii=False)
+    finally:
+        client.close()
+
 if __name__ == "__main__":
     mcp.run()
