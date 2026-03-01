@@ -67,7 +67,8 @@ def get_alerts(page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=100)):
             d = dict(r._mapping)
             for k, v in d.items():
                 if hasattr(v, "isoformat"):
-                    d[k] = v.isoformat()
+                    val = v.isoformat()
+                    d[k] = val + "Z" if getattr(v, "tzinfo", None) is None and not val.endswith("Z") else val
                 elif hasattr(v, "normalize"):
                     d[k] = float(v)
             alerts.append(d)
@@ -95,7 +96,8 @@ def get_orders(page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=100)):
             d = dict(r._mapping)
             for k, v in d.items():
                 if hasattr(v, "isoformat"):
-                    d[k] = v.isoformat()
+                    val = v.isoformat()
+                    d[k] = val + "Z" if getattr(v, "tzinfo", None) is None and not val.endswith("Z") else val
             orders.append(d)
 
         return {"total": total, "page": page, "size": size, "data": orders}
@@ -120,7 +122,8 @@ def get_report(trace_id: str):
         d = dict(row._mapping)
         for k, v in d.items():
             if hasattr(v, "isoformat"):
-                d[k] = v.isoformat()
+                val = v.isoformat()
+                d[k] = val + "Z" if getattr(v, "tzinfo", None) is None and not val.endswith("Z") else val
         return d
     except Exception as e:
         return {"error": str(e)}
@@ -339,7 +342,7 @@ async function loadTable(tab, page) {
       if (tab === 'alerts') {
         const lvl = row.alert_level || 'P2';
         html += `<tr>
-          <td>${row.created_at || '-'}</td>
+          <td>${formatTime(row.created_at)}</td>
           <td><strong>${row.device_id}</strong></td>
           <td><span class="badge-level badge-${lvl}">${lvl}</span></td>
           <td>${row.temperature ? row.temperature + '°C' : '-'}</td>
@@ -350,7 +353,7 @@ async function loadTable(tab, page) {
       } else {
         const st = row.status || 'PENDING';
         html += `<tr>
-          <td>${row.created_at || '-'}</td>
+          <td>${formatTime(row.created_at)}</td>
           <td style="font-family:monospace">${row.order_id || '-'}</td>
           <td><strong>${row.device_id}</strong></td>
           <td><span class="badge-level badge-${row.priority||'P1'}">${row.priority||'-'}</span></td>
@@ -394,7 +397,7 @@ async function viewReport(traceId, deviceId) {
     
     let reportHtml = `
       <div style="font-size:12px;color:var(--text-muted);margin-bottom:16px;">
-        诊断时间: ${d.created_at} | 故障分级: <span class="badge-level badge-${d.severity || 'P1'}">${d.severity || '未知'}</span>
+        诊断时间: ${formatTime(d.created_at)} | 故障分级: <span class="badge-level badge-${d.severity || 'P1'}">${d.severity || '未知'}</span>
       </div>
       <h4>👨‍⚕️ 诊断专家分析报告</h4>
       <div class="diag-box">${escapeHtml(d.diagnosis_text || '无详细分析记录')}</div>
@@ -414,6 +417,13 @@ function closeModal() {
 
 function escapeHtml(unsafe) {
     return (unsafe||'').replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function formatTime(isoStr) {
+  if (!isoStr) return '-';
+  const d = new Date(isoStr);
+  if (isNaN(d)) return isoStr;
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0') + ' ' + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0') + ':' + String(d.getSeconds()).padStart(2, '0');
 }
 
 function switchTab(tab) {
