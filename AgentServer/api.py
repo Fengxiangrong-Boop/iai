@@ -109,6 +109,10 @@ app = FastAPI(
 from routes.dashboard import router as dashboard_router
 app.include_router(dashboard_router)
 
+# === 注册工单结案路由 (RAG 飞轮入口) ===
+from routes.workorder import router as workorder_router
+app.include_router(workorder_router)
+
 # === 数据模型定义 ===
 class AlertPayload(BaseModel):
     device_id: str = Field(..., description="设备唯一标识符")

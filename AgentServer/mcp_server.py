@@ -215,5 +215,71 @@ def analyze_historical_trend(device_id: str, metric: str = "temperature", hours_
     finally:
         client.close()
 
+
+@mcp.tool()
+def search_expert_experience(query: str, device_id: str = "", top_k: int = 3) -> str:
+    """
+    【RAG 语义检索工具】从本厂真实的历史维修案卷中，基于语义相似度搜索与当前故障最匹配的人工结案记录。
+    该知识库中的数据全部来自人类工程师确认过的真实维修经验（Ground Truth），而非 AI 推测。
+
+    使用场景：当你需要参考历史上类似故障的真实解决方案时，调用此工具。
+    若检索结果为空，说明尚无类似过往记录，应基于设备手册和通用知识进行推理。
+
+    参数:
+    - query: 当前故障的症状描述 (例如："温度持续升高到85度，震动达2.1G")
+    - device_id: 可选，指定设备 ID 进一步缩小搜索范围
+    - top_k: 返回最相似的前 N 条记录，默认 3
+    """
+    try:
+        from services.vector_service import search_similar, EXPERIENCE_COLLECTION
+
+        results = search_similar(
+            query_text=query,
+            collection_name=EXPERIENCE_COLLECTION,
+            top_k=top_k
+        )
+
+        if not results:
+            return json.dumps({
+                "status": "success",
+                "message": "暂无与当前故障匹配的历史维修经验记录。请基于设备手册和通用工程知识进行推理。",
+                "matched_cases": []
+            }, ensure_ascii=False)
+
+        # 格式化为大模型易读的结构
+        cases = []
+        for r in results:
+            p = r["payload"]
+            cases.append({
+                "相似度": f"{r['score'] * 100:.1f}%",
+                "工单号": p.get("order_no", "未知"),
+                "设备": p.get("device_id", "未知"),
+                "故障症状": p.get("symptoms", ""),
+                "真实根因": p.get("root_cause", ""),
+                "解决方案": p.get("solution", ""),
+                "维修人": p.get("engineer", "未知"),
+                "数据来源": "人工结案确认"
+            })
+
+        return json.dumps({
+            "status": "success",
+            "message": f"检索到 {len(cases)} 条高度相似的历史维修经验",
+            "matched_cases": cases
+        }, ensure_ascii=False)
+
+    except Exception as e:
+        return json.dumps({
+            "status": "error",
+            "message": f"RAG 检索服务异常: {str(e)}。可忽略此工具结果，基于其他信息继续推理。"
+        }, ensure_ascii=False)
+
+
 if __name__ == "__main__":
+    # 启动时初始化向量集合
+    try:
+        from services.vector_service import init_collections
+        init_collections()
+    except Exception as e:
+        print(f"⚠️ Qdrant 集合初始化跳过: {e}")
+
     mcp.run()

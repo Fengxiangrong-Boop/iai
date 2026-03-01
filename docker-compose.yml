@@ -204,6 +204,21 @@ services:
     #           count: all
     #           capabilities: [gpu]
 
+  # ================================
+  # 向量数据库 - Qdrant (RAG 核心)
+  # 访问: http://192.168.0.105:6333/dashboard
+  # ================================
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: qdrant
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    networks:
+      - iai-network
+
 volumes:
   kafka_data:
   influxdb_data:
@@ -213,4 +228,5 @@ volumes:
   grafana_data:
   ollama_data:
   zookeeper_data:
+  qdrant_data:
 
