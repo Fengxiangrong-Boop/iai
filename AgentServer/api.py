@@ -149,19 +149,25 @@ async def process_alert_task(trace_id: str, alert_data: dict):
     try:
         # 1. 启动诊断专家
         req_logger.info("👨‍⚕️ [步骤 1] 启动诊断专家 (Diagnostic Expert)...")
+        from services.event_bus import event_bus
+        event_bus.publish("global_stream", f"<b>[{trace_id[:8]}]</b> 👨‍⚕️ 启动诊断专家对 {device_id} 进行排查...")
         diagnostic_agent = DiagnosticAgent(
             llm_client=llm_client, 
             mcp_session=state.mcp_session, 
-            model_name=MODEL_NAME
+            model_name=MODEL_NAME,
+            trace_id=trace_id
         )
         report = await diagnostic_agent.diagnose(alert_data, tools=state.tools_cache)
         req_logger.info(f"📄 诊断报告出炉:\n{report}")
+        event_bus.publish("global_stream", f"<b>[{trace_id[:8]}]</b> 📄 诊断报告已生成")
         
         # 2. 启动决策专家
         req_logger.info("👨‍⚖️ [步骤 2] 启动决策专家 (Decision Maker)...")
+        event_bus.publish("global_stream", f"<b>[{trace_id[:8]}]</b> 👨‍⚖️ 启动决策专家正在制定方案...")
         decision_agent = DecisionAgent(
             llm_client=llm_client,
-            model_name=MODEL_NAME
+            model_name=MODEL_NAME,
+            trace_id=trace_id
         )
         decision = await decision_agent.make_decision(diagnostic_report=report)
         req_logger.info(f"📜 最终维保决策:\n{decision}")
@@ -172,9 +178,12 @@ async def process_alert_task(trace_id: str, alert_data: dict):
         AlertService.create_work_order(trace_id, device_id, decision)
         
         req_logger.info("✅ 告警智能诊断流转处理和工单入库闭环全部完成！")
+        event_bus.publish("global_stream", f"<b>[{trace_id[:8]}]</b> ✅ 流转闭环完成，诊断报告与工单已落盘！")
         
     except Exception as e:
         req_logger.error(f"❌ 处理流转异常: {e}", exc_info=True)
+        from services.event_bus import event_bus
+        event_bus.publish("global_stream", f"<b>[{trace_id[:8]}]</b> ❌ 智能体系统异常: {e}")
 
 # === API 路由定义 ===
 

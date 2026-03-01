@@ -11,13 +11,35 @@ IAI Web 管理后台 API
 - GET /dashboard                 → Web 管理界面
 """
 
-from fastapi import APIRouter, Query, Depends
-from fastapi.responses import HTMLResponse
+from fastapi import APIRouter, Query, Depends, Request
+from fastapi.responses import HTMLResponse, StreamingResponse
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 from models.database import get_db
+from services.event_bus import event_bus
+import asyncio
 
 router = APIRouter()
+
+@router.get("/api/v1/dashboard/stream")
+async def stream_logs(request: Request):
+    """服务器推送技术 (SSE)，实时传输 Agent 系统日志"""
+    async def event_generator():
+        q = event_bus.subscribe("global_stream")
+        try:
+            while True:
+                if await request.is_disconnected():
+                    break
+                try:
+                    msg = await asyncio.wait_for(q.get(), timeout=1.0)
+                    yield f"data: {msg}\n\n"
+                except asyncio.TimeoutError:
+                    continue
+        except asyncio.CancelledError:
+            pass
+        finally:
+            event_bus.unsubscribe("global_stream", q)
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
 @router.get("/api/v1/dashboard/stats")
@@ -260,6 +282,23 @@ def dashboard_page():
   }
   .btn:hover { background: var(--accent); color: #0f172a; }
 
+  /* 悬浮实时终端 */
+  .terminal-panel {
+    background: #0a0e17; border: 1px solid var(--border); border-radius: 12px;
+    margin-top: 24px; display: flex; flex-direction: column; overflow: hidden;
+  }
+  .terminal-header {
+    background: #111827; padding: 12px 16px; font-size: 13px; font-weight: bold;
+    color: var(--accent); border-bottom: 1px solid var(--border);
+  }
+  .terminal-body {
+    padding: 16px; height: 300px; overflow-y: auto;
+    font-family: 'JetBrains Mono', 'Courier New', monospace; font-size: 13px;
+    line-height: 1.6; color: #a3be8c;
+  }
+  .log-line { margin-bottom: 4px; border-bottom: 1px dashed rgba(255,255,255,0.05); padding-bottom: 4px;}
+  .log-line b { color: #88c0d0; }
+
   @media (max-width: 768px) {
     .stats-row { grid-template-columns: repeat(2, 1fr); }
   }
@@ -289,6 +328,14 @@ def dashboard_page():
     <div id="table-content"><div class="loading">加载中...</div></div>
     <div class="pagination" id="pagination"></div>
   </div>
+
+  <div class="terminal-panel" id="terminalPanel">
+    <div class="terminal-header"><span style="display:inline-block;width:8px;height:8px;background:#22c55e;border-radius:50%;margin-right:8px;animation:blink 1.5s infinite;"></span> AI 大脑实时思维网段 (全局溯源)</div>
+    <div class="terminal-body" id="terminalBody">
+      <div style="color:var(--text-muted)">>>> 正在监听系统突发事件大模型推演实况...</div>
+    </div>
+  </div>
+  <style>@keyframes blink { 0% {opacity:1;} 50% {opacity:0.3;} 100% {opacity:1;} }</style>
 </div>
 
 <!-- 诊断报告弹窗 -->
@@ -428,6 +475,18 @@ function switchTab(tab) {
   event.target.classList.add('active');
   loadTable(tab, 1);
 }
+
+// 连接 SSE 事件流
+const eventSource = new EventSource('/api/v1/dashboard/stream');
+eventSource.onmessage = function(event) {
+  const terminal = document.getElementById('terminalBody');
+  const div = document.createElement('div');
+  div.className = 'log-line';
+  div.innerHTML = event.data;
+  terminal.appendChild(div);
+  // 保持滚动条在最底部
+  terminal.scrollTop = terminal.scrollHeight;
+};
 
 // 初始化
 loadStats();

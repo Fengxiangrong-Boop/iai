@@ -1,23 +1,33 @@
 from typing import List, Dict, Any, Optional
 import json
+from services.event_bus import event_bus
 
 class BaseAgent:
     """
     基础智能体类，封装与 LLM 的交互和 ReAct (Reasoning and Acting) 循环。
     包含错误去重机制：当同一工具连续返回相同错误时，自动注入提示引导大模型换策略。
     """
-    def __init__(self, name: str, role_description: str, llm_client, mcp_session=None, model_name: str = "gpt-4o"):
+    def __init__(self, name: str, role_description: str, llm_client, mcp_session=None, model_name: str = "gpt-4o", trace_id: str = ""):
         self.name = name
         self.role_description = role_description
         self.llm_client = llm_client
         self.mcp_session = mcp_session
         self.model_name = model_name
+        self.trace_id = trace_id
         
         # 维护智能体的上下文记忆
         self.memory: List[Dict[str, Any]] = [
             {"role": "system", "content": self.role_description}
         ]
         
+    def _log(self, msg: str):
+        print(msg)
+        try:
+            prefix = f"<b>[{self.trace_id[:8]}]</b> " if self.trace_id else ""
+            event_bus.publish("global_stream", prefix + msg)
+        except Exception:
+            pass
+
     def add_message(self, role: str, content: str):
         self.memory.append({"role": role, "content": content})
 
@@ -29,7 +39,7 @@ class BaseAgent:
         except json.JSONDecodeError:
             return f"Error: Invalid JSON arguments for {function_name}"
             
-        print(f"[{self.name}] 🔧 正在调用工具 -> {function_name}({function_args})")
+        self._log(f"[{self.name}] 🔧 正在调用工具 -> {function_name}({function_args})")
         
         if not self.mcp_session:
             return f"Error: MCP session is not initialized for {self.name}"
@@ -37,11 +47,11 @@ class BaseAgent:
         try:
             result = await self.mcp_session.call_tool(function_name, arguments=function_args)
             raw_text = result.content[0].text
-            print(f"[{self.name}] 📦 工具返回结果 -> {raw_text[:200]}...")  # 打印前200字符
+            self._log(f"[{self.name}] 📦 工具返回结果 -> {raw_text[:200]}...")  # 打印前200字符
             return raw_text
         except Exception as e:
             error_msg = f"Error executing {function_name}: {str(e)}"
-            print(f"[{self.name}] ❌ 工具执行出错 -> {error_msg}")
+            self._log(f"[{self.name}] ❌ 工具执行出错 -> {error_msg}")
             return error_msg
 
     async def run(self, max_turns: int = 5, tools: Optional[List[Dict]] = None) -> str:
@@ -56,7 +66,7 @@ class BaseAgent:
         MAX_SAME_ERROR = 2  # 同一工具允许的最大连续错误次数
 
         while turn < max_turns:
-            print(f"\n--- [{self.name}] 思考轮次 {turn + 1}/{max_turns} ---")
+            self._log(f"\n--- [{self.name}] 思考轮次 {turn + 1}/{max_turns} ---")
             
             # 1. 询问大模型 (根据配置决定是否带工具)
             kwargs = {
@@ -96,12 +106,12 @@ class BaseAgent:
                             
                             # 包装成与 OpenAI 返回一致的结构
                             tool_calls = [DummyToolCall(f"call_{turn}", DummyFunction(parsed["name"], parsed["arguments"]))]
-                            print(f"[{self.name}] 🩹 触发兼容层：从普通文本提取到隐藏的工具调用 -> {parsed['name']}")
+                            self._log(f"[{self.name}] 🩹 触发兼容层：从普通文本提取到隐藏的工具调用 -> {parsed['name']}")
                     except Exception:
                         pass
 
             if tool_calls:
-                print(f"[{self.name}] 🧠 决定执行 Action...")
+                self._log(f"[{self.name}] 🧠 决定执行 Action...")
                 has_blocked_tool = False
 
                 for tool_call in tool_calls:
@@ -113,7 +123,7 @@ class BaseAgent:
                             f"⚠️ 工具 '{tool_name}' 已连续 {error_tracker[tool_name]['count']} 次返回相同错误，"
                             f"跳过本次调用。请根据已有信息直接进行分析推理，不要再重复调用该工具。"
                         )
-                        print(f"[{self.name}] 🚫 {blocked_msg}")
+                        self._log(f"[{self.name}] 🚫 {blocked_msg}")
                         self.memory.append({
                             "role": "tool",
                             "tool_call_id": tool_call.id,
@@ -158,12 +168,12 @@ class BaseAgent:
                 
             else:
                 # 3. 大模型输出了自然语言的结果，ReAct 循环结束
-                print(f"[{self.name}] 🎯 思考完毕，得出最终结论。")
+                self._log(f"[{self.name}] 🎯 思考完毕，得出最终结论。")
                 return response_message.content
                 
         # 达到最大轮次强制退出
         final_msg = f"[{self.name}] ⚠️ 达到最大思考轮次 ({max_turns})，强制终止推演。"
-        print(final_msg)
+        self._log(final_msg)
         # 最后再给大模型一次机会输出结论
         self.add_message("system", "你已经达到了最大工具调用轮次。请立即基于所有已获取的信息，输出你的最终分析结论。")
         try:

@@ -13,7 +13,7 @@ DECISION_ROLE = """
 """
 
 class DecisionAgent(BaseAgent):
-    def __init__(self, llm_client, model_name: str = "gpt-4o"):
+    def __init__(self, llm_client, model_name: str = "gpt-4o", trace_id: str = ""):
         nacos_role = NacosConfigManager.get_config("agent.prompts.decision", default_val=DECISION_ROLE)
         # 决策智能体通常不需要自己去调 MCP 工具，它依赖上游的总结
         super().__init__(
@@ -21,7 +21,8 @@ class DecisionAgent(BaseAgent):
             role_description=nacos_role,
             llm_client=llm_client,
             mcp_session=None, 
-            model_name=model_name
+            model_name=model_name,
+            trace_id=trace_id
         )
         
     async def make_decision(self, diagnostic_report: str) -> str:

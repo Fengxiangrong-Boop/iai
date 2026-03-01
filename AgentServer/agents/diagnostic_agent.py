@@ -17,7 +17,7 @@ DIAGNOSTIC_ROLE = """
 """
 
 class DiagnosticAgent(BaseAgent):
-    def __init__(self, llm_client, mcp_session, model_name: str = "gpt-4o"):
+    def __init__(self, llm_client, mcp_session, model_name: str = "gpt-4o", trace_id: str = ""):
         # 实时从 Nacos 拉取，如果是断网或没配置则使用兜底默认值
         nacos_role = NacosConfigManager.get_config("agent.prompts.diagnostic", default_val=DIAGNOSTIC_ROLE)
         
@@ -26,7 +26,8 @@ class DiagnosticAgent(BaseAgent):
             role_description=nacos_role,
             llm_client=llm_client,
             mcp_session=mcp_session,
-            model_name=model_name
+            model_name=model_name,
+            trace_id=trace_id
         )
         
     async def diagnose(self, alert_data: dict, tools: List[Dict]) -> str:
