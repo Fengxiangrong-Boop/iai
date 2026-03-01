@@ -192,6 +192,7 @@ services:
       - "11434:11434"
     volumes:
       - ollama_data:/root/.ollama
+      - ollama_data:/home/ollama/.ollama
     networks:
       - iai-network
     # 如有 NVIDIA GPU，取消下面注释:
