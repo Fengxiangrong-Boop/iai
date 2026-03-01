@@ -5,7 +5,7 @@ import redis
 import logging
 from datetime import datetime
 from sqlalchemy import text
-from models.database import get_db
+from models.database import get_db, SessionLocal
 
 logger = logging.getLogger(__name__)
 
