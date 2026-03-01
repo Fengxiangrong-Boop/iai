@@ -72,7 +72,7 @@ if [ -f "$NACOS_INIT" ]; then
     done
     echo ""
 
-    NACOS_CHECK=$(curl -s "http://127.0.0.1:8848/nacos/v1/cs/configs?dataId=sensor.thresholds.json&group=DEFAULT_GROUP" 2>/dev/null || echo "")
+    NACOS_CHECK=$(curl -s -f "http://127.0.0.1:8848/nacos/v1/cs/configs?dataId=sensor.thresholds.json&group=DEFAULT_GROUP" 2>/dev/null || echo "")
     if [ -z "$NACOS_CHECK" ] || echo "$NACOS_CHECK" | grep -q "error"; then
         cd "$PROJECT_DIR"
         python deploy/nacos_config_init.py 2>/dev/null || true
