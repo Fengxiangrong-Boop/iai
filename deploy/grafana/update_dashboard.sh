@@ -288,7 +288,22 @@ curl -s -X POST "$GRAFANA_URL/api/dashboards/db" \
             "rawSql": "SELECT created_at as time, device_id, alert_level, temperature, vibration FROM alert_log ORDER BY created_at DESC LIMIT 20",
             "format": "table"
           }
-        ]
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "custom": {}
+          },
+          "overrides": [
+            {
+              "matcher": { "id": "byName", "options": "temperature" },
+              "properties": [ { "id": "decimals", "value": 2 } ]
+            },
+            {
+              "matcher": { "id": "byName", "options": "vibration" },
+              "properties": [ { "id": "decimals", "value": 3 } ]
+            }
+          ]
+        }
       },
       {
         "id": 6,
