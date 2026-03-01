@@ -3,7 +3,7 @@ from mcp.server.fastmcp import FastMCP
 from typing import Optional
 
 from sqlalchemy import text
-from models.database import get_db, get_influx_client, INFLUXDB_BUCKET
+from models.database import get_db, SessionLocal, get_influx_client, INFLUXDB_BUCKET
 
 # 初始化 FastMCP 服务器
 mcp = FastMCP("IIoT_Expert_Tools")
@@ -17,7 +17,7 @@ def query_device_status(device_id: str) -> str:
     参数:
     - device_id: 设备的唯一标识符 (例如：PUMP_01)
     """
-    db = next(get_db())
+    db = SessionLocal()
     try:
         device_id = device_id.upper()
         query = text("SELECT * FROM device_registry WHERE device_id = :device_id")
@@ -34,6 +34,8 @@ def query_device_status(device_id: str) -> str:
         return json.dumps({"status": "error", "message": f"未找到设备 {device_id} 的元数据。"}, ensure_ascii=False)
     except Exception as e:
         return json.dumps({"status": "error", "message": str(e)}, ensure_ascii=False)
+    finally:
+        db.close()
 
 @mcp.tool()
 def fetch_telemetry_data(device_id: str, window_mins: int = 60) -> str:
@@ -101,7 +103,7 @@ def search_maintenance_kb(device_id: str, query_str: Optional[str] = None) -> st
     - device_id: 设备的唯一标识符 (例如：PUMP_01)
     - query_str: 可选，具体的故障现象关键词查询
     """
-    db = next(get_db())
+    db = SessionLocal()
     try:
         device_id = device_id.upper()
         # 查询设备类型用于过滤知识库
@@ -139,6 +141,8 @@ def search_maintenance_kb(device_id: str, query_str: Optional[str] = None) -> st
         }, ensure_ascii=False)
     except Exception as e:
         return json.dumps({"status": "error", "message": f"MySQL 查询失败: {str(e)}"}, ensure_ascii=False)
+    finally:
+        db.close()
 
 if __name__ == "__main__":
     mcp.run()

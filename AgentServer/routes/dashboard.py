@@ -11,18 +11,18 @@ IAI Web 管理后台 API
 - GET /dashboard                 → Web 管理界面
 """
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Depends
 from fastapi.responses import HTMLResponse
 from sqlalchemy import text
+from sqlalchemy.orm import Session
 from models.database import get_db
 
 router = APIRouter()
 
 
 @router.get("/api/v1/dashboard/stats")
-def get_stats():
+def get_stats(db: Session = Depends(get_db)):
     """获取系统统计概览：告警总数、工单总数、各级别分布。"""
-    db = next(get_db())
     try:
         alert_count = db.execute(text("SELECT COUNT(*) as cnt FROM alert_log")).scalar() or 0
         order_count = db.execute(text("SELECT COUNT(*) as cnt FROM work_order")).scalar() or 0
@@ -50,9 +50,8 @@ def get_stats():
 
 
 @router.get("/api/v1/dashboard/alerts")
-def get_alerts(page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=100)):
+def get_alerts(page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=100), db: Session = Depends(get_db)):
     """获取告警列表（分页），按时间倒序。"""
-    db = next(get_db())
     try:
         offset = (page - 1) * size
         rows = db.execute(text(
@@ -79,9 +78,8 @@ def get_alerts(page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=100)):
 
 
 @router.get("/api/v1/dashboard/orders")
-def get_orders(page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=100)):
+def get_orders(page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=100), db: Session = Depends(get_db)):
     """获取工单列表（分页），按时间倒序。"""
-    db = next(get_db())
     try:
         offset = (page - 1) * size
         rows = db.execute(text(
@@ -106,9 +104,8 @@ def get_orders(page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=100)):
 
 
 @router.get("/api/v1/dashboard/report/{trace_id}")
-def get_report(trace_id: str):
+def get_report(trace_id: str, db: Session = Depends(get_db)):
     """获取指定告警的 AI 诊断报告。"""
-    db = next(get_db())
     try:
         row = db.execute(text(
             "SELECT trace_id, device_id, diagnosis_text, decision_text, fault_category, severity, "
