@@ -59,12 +59,15 @@ class BaseAgent:
             print(f"\n--- [{self.name}] 思考轮次 {turn + 1}/{max_turns} ---")
             
             # 1. 询问大模型 (根据配置决定是否带工具)
-            response = await self.llm_client.chat.completions.create(
-                model=self.model_name,
-                messages=self.memory,
-                tools=tools,
-                tool_choice="auto" if tools else "none"
-            )
+            kwargs = {
+                "model": self.model_name,
+                "messages": self.memory
+            }
+            if tools:
+                kwargs["tools"] = tools
+                kwargs["tool_choice"] = "auto"
+                
+            response = await self.llm_client.chat.completions.create(**kwargs)
             
             response_message = response.choices[0].message
             # 将大模型的回复加入上下文
@@ -166,9 +169,7 @@ class BaseAgent:
         try:
             final_response = await self.llm_client.chat.completions.create(
                 model=self.model_name,
-                messages=self.memory,
-                tools=None,
-                tool_choice="none"
+                messages=self.memory
             )
             return final_response.choices[0].message.content
         except Exception:
